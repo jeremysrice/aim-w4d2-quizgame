@@ -50,8 +50,8 @@ test("timeRemaining: based on elapsed real time", () => {
 });
 
 test("timeRemaining: a long gap (e.g. throttled background tab) still runs the clock out", () => {
-  // Only one tick happened, but 20 real seconds passed: no time should be left.
-  assert.equal(L.timeRemaining(0, 20000), 0);
+  // Only one tick happened, but more real time than the limit passed: no time should be left.
+  assert.equal(L.timeRemaining(0, (L.TIME_LIMIT + 5) * 1000), 0);
 });
 
 test("timeRemaining: never above the limit, even if the clock looks backwards", () => {

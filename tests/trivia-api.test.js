@@ -33,6 +33,10 @@ console.warn = () => {};
 // No real waiting in tests.
 TRIVIA_CONFIG.apiGapMs = 0;
 TRIVIA_CONFIG.requestTimeoutMs = 50;
+// Most tests ask the API for the same level as the game tier; the
+// easier-mapping test below sets its own.
+const EASIER_MAPPING = TRIVIA_CONFIG.apiDifficulty;
+TRIVIA_CONFIG.apiDifficulty = { easy: "easy", medium: "medium", hard: "hard" };
 
 // An API question, URL-encoded like the real API sends it.
 function apiQuestion(text) {
@@ -112,6 +116,32 @@ test("fetchDifficulty: retries when rate-limited, then succeeds", async () => {
   const questions = await api.fetchDifficulty("easy");
   assert.equal(calls.length, 2);
   assert.equal(questions.length, 5);
+});
+
+// ----- Easier questions -----
+test("refreshQuestions: game tiers use easier API levels, without repeating a question", async () => {
+  reset();
+  TRIVIA_CONFIG.apiDifficulty = EASIER_MAPPING;
+  // The easy and medium tiers both ask for "easy"; the second answer repeats two questions.
+  const answers = [["easy 0", "easy 1", "easy 2"], ["easy 0", "easy 1", "new 0", "new 1"], ["medium 0", "medium 1"]];
+  const requested = [];
+  globalThis.fetch = (url) => {
+    requested.push(new URL(url).searchParams.get("difficulty"));
+    const results = answers[requested.length - 1].map(apiQuestion);
+    return Promise.resolve({ ok: true, status: 200, json: async () => ({ response_code: 0, results }) });
+  };
+  try {
+    await api.refreshQuestions();
+  } finally {
+    TRIVIA_CONFIG.apiDifficulty = { easy: "easy", medium: "medium", hard: "hard" };
+  }
+  assert.deepEqual(requested, ["easy", "easy", "medium"]);
+  assert.deepEqual(questionSource.bank.medium.map((x) => x.q), ["new 0", "new 1"]);
+  assert.equal(questionSource.partial, false);
+});
+
+test("built-in questions: every tier still has at least 8 questions", () => {
+  ["easy", "medium", "hard"].forEach((d) => assert.ok(QUESTION_BANK[d].length >= 8, d));
 });
 
 // ----- Fix 5a: keep partial results -----

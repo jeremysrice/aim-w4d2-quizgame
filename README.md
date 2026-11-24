@@ -8,7 +8,7 @@ A quiz game for one or two players, built with plain HTML, CSS and JavaScript (n
 
 - **Live questions that refresh every 30 minutes:** new questions come from the free [Open Trivia Database](https://opentdb.com) (no API key). They're cached in the browser and swapped for a new set every 30 minutes, or right away with the **Get new questions now** button. A game in progress isn't affected; new questions start with the next game. If the device is offline or the API can't be reached, the game uses the built-in questions in `questions.js`.
 - **Difficulty-weighted scoring:** easy questions are worth 10 points, medium 20 and hard 30. Each game goes from easy to hard.
-- **Speed bonus:** each question has a 15-second timer. Answering faster earns up to 50% bonus points. Running out of time counts as a wrong answer.
+- **Speed bonus:** each question has a 60-second timer. Answering faster earns up to 50% bonus points. Running out of time counts as a wrong answer.
 - **1 or 2 players:** in two-player mode, players take turns on one device, and each player gets different questions.
 - **Score tracking:** a live scoreboard during play, and results showing each player's accuracy at each difficulty.
 - **Top 5 leaderboard:** saved in the browser with `localStorage`. Higher scores push lower ones off the board, and dropped scores are deleted.
@@ -56,5 +56,6 @@ You can also run `node --test` directly. The tests use fake network responses, s
 - **Turn off the speed bonus:** set `MAX_SPEED_BONUS = 0` in `game-logic.js`.
 - **Change the timer:** edit `TIME_LIMIT` (in seconds) in `game-logic.js`.
 - **Change the game lengths:** edit `LENGTHS` in `game-logic.js`. If a difficulty runs short of questions, the game is shortened evenly for everyone.
+- **Make live questions harder or easier:** edit `apiDifficulty` in `TRIVIA_CONFIG` in `trivia-api.js`. By default each game tier uses one level easier from Open Trivia DB (easy and medium use its "easy" questions, hard uses its "medium" questions). Set it to `{ easy: "easy", medium: "medium", hard: "hard" }` for the original difficulty.
 - **Change the refresh interval:** edit `refreshMs` in `TRIVIA_CONFIG` in `trivia-api.js`.
 - **Add backup questions:** add entries to the `easy`, `medium` or `hard` lists in `questions.js`. Each entry looks like `{ q, choices: [2–4 options], answer: indexOfCorrectChoice }`. Choices must not repeat. Each difficulty should have at least 8 questions so a two-player Long game never has to be shortened; a test checks this.

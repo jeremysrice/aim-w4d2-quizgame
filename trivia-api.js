@@ -13,11 +13,14 @@ const TRIVIA_CONFIG = {
   retryAfterFailureMs: 5 * 60 * 1000, // try again in 5 min if a fetch fails (or only partly works)
   waitForOtherTabMs: 60 * 1000, // re-check after 1 min if another tab is already fetching
   questionsPerDifficulty: 20, // how many to fetch per difficulty (API max is 50)
+  // Which Open Trivia DB difficulty fills each game tier. Shifted down one
+  // level to keep the game easy: its "hard" questions are very obscure.
+  apiDifficulty: { easy: "easy", medium: "easy", hard: "medium" },
   apiGapMs: 5500, // Open Trivia DB allows 1 request per 5 seconds per IP
   requestTimeoutMs: 10 * 1000, // give up on a request after 10 seconds
   maxAttempts: 3, // tries per difficulty when rate-limited
   cacheKey: "quizClashQuestionCache", // storage key for cached questions
-  cacheVersion: 2, // bump when the cache format changes; older caches are ignored
+  cacheVersion: 3, // bump when the cache format or question mix changes; older caches are ignored
   lockName: "quizClash-question-refresh", // cross-tab lock so only one tab fetches at a time
 };
 
@@ -185,17 +188,24 @@ async function fetchDifficulty(difficulty, attempt = 1) {
   return questions;
 }
 
-// Fetches each difficulty in turn (spaced apiGapMs apart to respect the rate
-// limit). A failure on one difficulty doesn't stop the others.
+// Fetches each game tier in turn (spaced apiGapMs apart to respect the rate
+// limit), asking the API for the easier level set in apiDifficulty. Two tiers
+// can share an API level, so questions already fetched for an earlier tier
+// are dropped. A failure on one tier doesn't stop the others.
 // Returns { fetched: { difficulty: questions }, failed: [difficulty, ...] }.
 async function fetchAllDifficulties() {
   const fetched = {};
   const failed = [];
+  const seen = new Set();
   for (let i = 0; i < DIFFICULTIES.length; i++) {
     const difficulty = DIFFICULTIES[i];
     if (i > 0) await wait(TRIVIA_CONFIG.apiGapMs);
     try {
-      fetched[difficulty] = await fetchDifficulty(difficulty);
+      const apiLevel = (TRIVIA_CONFIG.apiDifficulty || {})[difficulty] || difficulty;
+      const questions = (await fetchDifficulty(apiLevel)).filter((item) => !seen.has(item.q));
+      if (!questions.length) throw new Error("Only repeats of questions already fetched");
+      questions.forEach((item) => seen.add(item.q));
+      fetched[difficulty] = questions;
     } catch (err) {
       console.warn(`Could not fetch ${difficulty} questions:`, err);
       failed.push(difficulty);

@@ -11,7 +11,7 @@ const POINTS = { easy: 10, medium: 20, hard: 30 }; // base points per correct an
 const DIFFICULTIES = ["easy", "medium", "hard"]; // the order questions are asked in
 const LENGTHS = { short: 2, standard: 3, long: 4 }; // questions per difficulty, per player
 const MAX_PLAYERS = 2;
-const TIME_LIMIT = 15; // seconds per question
+const TIME_LIMIT = 60; // seconds per question
 const MAX_SPEED_BONUS = 0.5; // up to +50% of base points
 const LEADERBOARD_SIZE = 5; // how many scores the leaderboard keeps
 

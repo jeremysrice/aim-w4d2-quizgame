@@ -2,7 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#060913" />
+  <meta name="format-detection" content="telephone=no" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Quiz Clash" />
   <title>Quiz Clash</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -33,11 +39,11 @@
 
       <div class="field">
         <label for="p1-name">Player 1 name</label>
-        <input id="p1-name" type="text" maxlength="16" placeholder="Player 1" />
+        <input id="p1-name" type="text" maxlength="16" placeholder="Player 1" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="done" />
       </div>
       <div class="field" id="p2-field" hidden>
         <label for="p2-name">Player 2 name</label>
-        <input id="p2-name" type="text" maxlength="16" placeholder="Player 2" />
+        <input id="p2-name" type="text" maxlength="16" placeholder="Player 2" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="done" />
       </div>
 
       <fieldset class="field">

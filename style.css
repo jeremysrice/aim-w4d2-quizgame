@@ -17,19 +17,43 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  background: var(--bg);
+}
+
 body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  background: radial-gradient(circle at top, #15123a, var(--bg) 55%) fixed;
+  /* Gradient on body (not "fixed") — background-attachment: fixed is janky/ignored on iOS. */
+  background: radial-gradient(circle at top, #15123a, var(--bg) 55%) no-repeat;
+  background-color: var(--bg);
   color: var(--text);
   min-height: 100vh;
+  min-height: 100dvh;
   line-height: 1.5;
+  overscroll-behavior-y: none;
 }
 
 .app {
   max-width: 680px;
   margin: 0 auto;
-  padding: 1.25rem 1rem 3rem;
+  /* Respect notches / home indicators on phones. */
+  padding:
+    max(1.25rem, env(safe-area-inset-top))
+    max(1rem, env(safe-area-inset-right))
+    max(3rem, env(safe-area-inset-bottom))
+    max(1rem, env(safe-area-inset-left));
 }
+
+/* Touch-friendly controls: no double-tap zoom delay, no grey tap flash. */
+button, .toggle, input {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  font-family: inherit;
+}
+button { -webkit-user-select: none; user-select: none; }
+button:focus-visible { outline: 3px solid var(--text); outline-offset: 2px; }
 
 .app-header { text-align: center; margin-bottom: 1.25rem; }
 .app-header h1 { font-size: clamp(1.8rem, 6vw, 2.6rem); letter-spacing: -0.02em; }
@@ -65,19 +89,22 @@ input[type="text"] {
   border: 2px solid var(--panel-2);
   background: var(--bg);
   color: var(--text);
-  font-size: 1rem;
+  font-size: max(16px, 1rem); /* 16px+ stops iOS from zooming on focus */
+  min-height: 48px;
 }
 input[type="text"]:focus { outline: none; border-color: var(--accent); }
 
 .toggle-group { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-.toggle { flex: 1 1 0; min-width: 100px; cursor: pointer; }
+.toggle { flex: 1 1 0; min-width: 0; cursor: pointer; }
 .toggle input { position: absolute; opacity: 0; pointer-events: none; }
 .toggle span {
   display: block;
   text-align: center;
-  padding: 0.7rem 0.5rem;
+  padding: 0.7rem 0.4rem;
+  min-height: 48px;
   border-radius: 10px;
   background: var(--panel-2);
+  white-space: nowrap;
   border: 2px solid transparent;
   font-weight: 600;
   transition: border-color 0.15s, background 0.15s;
@@ -149,7 +176,7 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
   text-decoration: underline;
   cursor: pointer;
 }
-.link-btn:hover { color: var(--text); }
+.link-btn { min-height: 44px; padding: 0 1rem; }
 
 @keyframes glow {
   50% { box-shadow: 0 0 14px rgba(245, 158, 11, 0.6); }
@@ -175,6 +202,7 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
   display: block;
   width: 100%;
   padding: 0.9rem 1rem;
+  min-height: 52px;
   border: 0;
   border-radius: 12px;
   font-size: 1.05rem;
@@ -186,7 +214,7 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
 }
 .btn:active { transform: scale(0.98); }
 .btn.primary { background: var(--accent); }
-.btn.primary:hover { background: var(--accent-hover); }
+.btn.primary:active { background: var(--accent-hover); }
 .btn[hidden] { display: none; }
 .btn-row { display: flex; gap: 0.75rem; margin-top: 1.5rem; }
 
@@ -261,7 +289,7 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
 }
-.answer-btn:hover:not(:disabled) { border-color: var(--accent); }
+.answer-btn:active:not(:disabled) { border-color: var(--accent); background: rgba(99, 102, 241, 0.15); }
 .answer-btn:disabled { cursor: default; opacity: 0.6; }
 .answer-btn .key {
   flex-shrink: 0;
@@ -306,12 +334,77 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
 .accuracy { color: var(--muted); margin-bottom: 0.75rem; }
 .breakdown { list-style: none; display: grid; gap: 0.35rem; }
 
-/* ----- Mobile ----- */
+/* ----- Hover effects only on devices with a real pointer (avoids "sticky" hover on touch) ----- */
+@media (hover: hover) and (pointer: fine) {
+  .btn.primary:hover { background: var(--accent-hover); }
+  .btn:not(.primary):hover { background: #415473; }
+  .answer-btn:hover:not(:disabled) { border-color: var(--accent); }
+  .toggle:hover span { border-color: rgba(99, 102, 241, 0.5); }
+  .link-btn:hover { color: var(--text); }
+}
+
+/* ----- Phones ----- */
 @media (max-width: 520px) {
-  .answers { grid-template-columns: 1fr; }
+  .answers { grid-template-columns: 1fr; gap: 0.6rem; }
+  .answer-btn { min-height: 56px; }
   .results-body { flex-direction: column; }
-  .btn-row { flex-direction: column; }
+  .btn-row { flex-direction: column-reverse; } /* primary action nearest the thumb */
   .points-legend { justify-content: center; }
+  .tagline { font-size: 0.85rem; }
+}
+
+/* Small phones (iPhone SE, older Androids) */
+@media (max-width: 380px) {
+  .app { padding-left: max(0.6rem, env(safe-area-inset-left)); padding-right: max(0.6rem, env(safe-area-inset-right)); }
+  .screen { padding: 1rem 0.85rem; }
+  .toggle span { font-size: 0.85rem; padding: 0.65rem 0.25rem; }
+  .scoreboard { gap: 0.5rem; }
+  .score-card { padding: 0.5rem 0.6rem; }
+  .score-card .name { font-size: 0.9rem; }
+  .score-card .score { font-size: 1.2rem; }
+  .final-score { font-size: 2.2rem; }
+  .leaderboard { padding: 0.75rem; }
+  .leaderboard-list li { column-gap: 0.45rem; padding: 0.45rem 0.55rem; }
+}
+
+/* Phones in landscape: little vertical room, so tighten everything. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .app { padding-top: max(0.5rem, env(safe-area-inset-top)); padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+  .app-header { margin-bottom: 0.5rem; }
+  .app-header h1 { font-size: 1.5rem; }
+  .tagline { display: none; }
+  .screen { padding: 0.9rem 1.1rem; }
+  .answers { grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+  .answer-btn { min-height: 48px; padding: 0.6rem 0.75rem; }
+  .question { margin: 0.75rem 0; font-size: 1.15rem; }
+  .turn-banner { margin: 0.6rem 0 0.25rem; }
+  .timer-bar { margin-top: 0.6rem; }
+  .feedback { margin: 0.6rem 0; }
+  .results-body { flex-direction: row; }
+  .btn-row { flex-direction: row; }
+}
+
+/* ----- Tablets ----- */
+@media (min-width: 768px) and (min-height: 501px) {
+  .app { max-width: 760px; padding-top: max(2.5rem, env(safe-area-inset-top)); }
+  .app-header { margin-bottom: 1.75rem; }
+  .tagline { font-size: 1.05rem; }
+  .screen { padding: 2.25rem 2.5rem; }
+  .question { font-size: 1.7rem; margin: 1.5rem 0; }
+  .answers { gap: 1rem; }
+  .answer-btn { min-height: 80px; font-size: 1.15rem; padding: 1rem 1.1rem; }
+  .answer-btn .key { width: 34px; height: 34px; font-size: 1rem; }
+  .btn { font-size: 1.15rem; min-height: 58px; }
+  .toggle span { font-size: 1.05rem; padding: 0.85rem 0.5rem; }
+  .score-card { padding: 0.8rem 1.1rem; }
+  .score-card .score { font-size: 1.7rem; }
+  .final-score { font-size: 3rem; }
+  .leaderboard-list li { padding: 0.65rem 0.9rem; }
+}
+
+/* Large tablets (iPad Pro, landscape tablets) */
+@media (min-width: 1024px) {
+  .app { max-width: 860px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

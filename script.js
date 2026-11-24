@@ -296,7 +296,9 @@ function handleAnswer(choiceIndex) {
   const next = $("next-btn");
   next.textContent = state.current === state.queue.length - 1 ? "See Results" : "Next";
   next.hidden = false;
-  next.focus();
+  next.focus({ preventScroll: true });
+  // On short phone screens the Next button can sit below the fold.
+  next.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 function isGameOver() {
@@ -368,6 +370,12 @@ document.querySelectorAll('input[name="players"]').forEach((radio) =>
 );
 
 $("start-btn").addEventListener("click", () => startGame());
+// Pressing "done"/Enter on the phone keyboard closes it instead of doing nothing.
+["p1-name", "p2-name"].forEach((id) =>
+  $(id).addEventListener("keydown", (e) => {
+    if (e.key === "Enter") e.target.blur();
+  })
+);
 $("next-btn").addEventListener("click", nextQuestion);
 $("replay-btn").addEventListener("click", () => startGame(state.settings));
 $("menu-btn").addEventListener("click", () => {

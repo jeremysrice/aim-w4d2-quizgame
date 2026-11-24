@@ -1,26 +1,32 @@
 // ===== Config =====
-const POINTS = { easy: 10, medium: 20, hard: 30 };
-const DIFFICULTIES = ["easy", "medium", "hard"];
+// Game-wide settings. Change these to tune scoring, timing and game length.
+const POINTS = { easy: 10, medium: 20, hard: 30 }; // base points per correct answer
+const DIFFICULTIES = ["easy", "medium", "hard"]; // the order questions are asked in
 const LENGTHS = { short: 2, standard: 3, long: 4 }; // questions per difficulty, per player
 const TIME_LIMIT = 15; // seconds per question
 const MAX_SPEED_BONUS = 0.5; // up to +50% of base points
-const LEADERBOARD_KEY = "quizClashLeaderboard";
-const LEADERBOARD_SIZE = 5;
+const LEADERBOARD_KEY = "quizClashLeaderboard"; // localStorage key for the top 5 list
+const LEADERBOARD_SIZE = 5; // how many scores the leaderboard keeps
 localStorage.removeItem("quizClashHighScore"); // retire the old single-score key
 
 // ===== State =====
+// Everything that changes during a game lives in this one object,
+// so the UI can always be redrawn from it.
 const state = {
   players: [], // { name, score, correct, byDifficulty: {easy:{right,total},...} }
-  queue: [], // [{ playerIndex, difficulty, q, choices, answer }]
-  current: 0,
-  answered: false,
-  timeLeft: TIME_LIMIT,
-  timerId: null,
-  settings: { playerCount: 1, length: "standard", names: [] },
+  queue: [], // [{ playerIndex, difficulty, q, category, choices, answer }]
+  current: 0, // index into queue of the question being shown
+  answered: false, // true once the current question has been answered/timed out
+  timeLeft: TIME_LIMIT, // seconds remaining on the current question
+  timerId: null, // setInterval id for the countdown
+  settings: { playerCount: 1, length: "standard", names: [] }, // last game's setup (for Play Again)
 };
 
 // ===== DOM =====
+// Shorthand for document.getElementById.
 const $ = (id) => document.getElementById(id);
+
+// The three screens of the app; only one is visible at a time.
 const screens = {
   setup: $("setup-screen"),
   quiz: $("quiz-screen"),
@@ -28,12 +34,15 @@ const screens = {
 };
 
 // ===== Helpers =====
+
+// Hides every screen, shows the one named (setup, quiz or results), and scrolls to the top.
 function showScreen(name) {
   Object.values(screens).forEach((s) => s.classList.remove("active"));
   screens[name].classList.add("active");
   window.scrollTo(0, 0);
 }
 
+// Returns a shuffled copy of an array (Fisher–Yates), leaving the original untouched.
 function shuffle(arr) {
   const copy = [...arr];
   for (let i = copy.length - 1; i > 0; i--) {
@@ -43,6 +52,7 @@ function shuffle(arr) {
   return copy;
 }
 
+// Converts text into HTML-safe text so player names or answers can't inject markup.
 function escapeHTML(str) {
   const div = document.createElement("div");
   div.textContent = str;
@@ -52,6 +62,8 @@ function escapeHTML(str) {
 // ===== Leaderboard =====
 // Stored as an array of { id, name, score, length, date }, sorted best-first.
 // Only the top LEADERBOARD_SIZE entries are kept; anything pushed below is deleted.
+
+// Reads the leaderboard from localStorage. Returns [] if it's missing or corrupted.
 function getLeaderboard() {
   try {
     const data = JSON.parse(localStorage.getItem(LEADERBOARD_KEY));
@@ -61,15 +73,17 @@ function getLeaderboard() {
   }
 }
 
+// Writes the leaderboard array to localStorage.
 function saveLeaderboard(board) {
   localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(board));
 }
 
+// Sorts entries in place: higher score first; on a tie, the more recent score ranks higher.
 function sortBoard(board) {
-  // Higher score first; on a tie, the more recent score ranks higher.
   return board.sort((a, b) => b.score - a.score || b.date - a.date);
 }
 
+// Returns true if a score would earn a spot on the current leaderboard.
 function qualifiesForLeaderboard(score) {
   const board = getLeaderboard();
   if (score <= 0) return false;
@@ -77,7 +91,8 @@ function qualifiesForLeaderboard(score) {
   return score >= board[board.length - 1].score; // ties go to the newer score
 }
 
-// Adds entries, re-sorts, and trims to the top 5. Returns ids that made the cut.
+// Adds new score entries, re-sorts, and trims to the top 5 (lower scores are deleted).
+// Returns the ids of the new entries that made the cut, so they can be highlighted.
 function addToLeaderboard(entries) {
   const board = getLeaderboard();
   const added = entries
@@ -89,6 +104,8 @@ function addToLeaderboard(entries) {
   return added.filter((e) => keptIds.has(e.id)).map((e) => e.id);
 }
 
+// Draws the leaderboard into the <ol> with the given id.
+// Entries whose ids are in highlightIds get a "NEW" tag and a glow.
 function renderLeaderboard(listId, highlightIds = []) {
   const board = getLeaderboard();
   const list = $(listId);
@@ -112,6 +129,9 @@ function renderLeaderboard(listId, highlightIds = []) {
 }
 
 // ===== Setup =====
+
+// Reads the setup form: number of players, game length, and player names
+// (blank names default to "Player 1" / "Player 2").
 function readSettings() {
   const playerCount = Number(document.querySelector('input[name="players"]:checked').value);
   const length = document.querySelector('input[name="length"]:checked').value;
@@ -122,11 +142,15 @@ function readSettings() {
   return { playerCount, length, names };
 }
 
+// Builds the ordered list of questions for a game.
+// Each player gets their own unique questions (perDifficulty of each difficulty),
+// ordered easy → medium → hard, with answer choices shuffled.
+// In 2-player mode the turns are interleaved: P1, P2, P1, P2...
 function buildQueue(playerCount, perDifficulty) {
-  // Each player gets unique questions; pool is shuffled per difficulty and split.
   const perPlayer = Array.from({ length: playerCount }, () => []);
   const bank = getActiveBank(); // live questions if loaded, otherwise built-in
 
+  // For each difficulty, shuffle the pool and hand each player a separate slice.
   DIFFICULTIES.forEach((difficulty) => {
     const pool = shuffle(bank[difficulty]);
     for (let p = 0; p < playerCount; p++) {
@@ -155,6 +179,9 @@ function buildQueue(playerCount, perDifficulty) {
   return queue;
 }
 
+// Starts a new game: resets every player's score and stats, builds the
+// question queue, and shows the first question. Pass settings to replay
+// with the same setup; otherwise they're read from the setup form.
 function startGame(settings = readSettings()) {
   state.settings = settings;
   state.players = settings.names.map((name) => ({
@@ -174,6 +201,8 @@ function startGame(settings = readSettings()) {
 }
 
 // ===== Quiz =====
+
+// Draws each player's name and score; outlines the player whose turn it is.
 function renderScoreboard() {
   const activeIndex = state.queue[state.current]?.playerIndex;
   $("scoreboard").innerHTML = state.players
@@ -187,6 +216,8 @@ function renderScoreboard() {
     .join("");
 }
 
+// Shows the current question: progress bar, difficulty badge, whose turn it is,
+// category, question text and answer buttons. Then starts the countdown.
 function renderQuestion() {
   const item = state.queue[state.current];
   const player = state.players[item.playerIndex];
@@ -194,14 +225,17 @@ function renderQuestion() {
 
   renderScoreboard();
 
+  // Progress: "Question X of Y" and the bar across the top.
   const total = state.queue.length;
   $("progress-text").textContent = `Question ${state.current + 1} of ${total}`;
   $("progress-fill").style.width = `${(state.current / total) * 100}%`;
 
+  // Difficulty badge, colored by difficulty, with its point value.
   const badge = $("difficulty-badge");
   badge.className = `badge ${item.difficulty}`;
   badge.textContent = `${item.difficulty} · ${POINTS[item.difficulty]} pts`;
 
+  // "Player X's turn" banner — only shown in 2-player games.
   const banner = $("turn-banner");
   if (state.players.length > 1) {
     banner.hidden = false;
@@ -214,6 +248,7 @@ function renderQuestion() {
   $("question-category").textContent = item.category;
   $("question-text").textContent = item.q;
 
+  // One button per choice, labeled A–D.
   const answersEl = $("answers");
   answersEl.innerHTML = "";
   item.choices.forEach((choice, i) => {
@@ -224,6 +259,7 @@ function renderQuestion() {
     answersEl.appendChild(btn);
   });
 
+  // Clear the previous question's feedback and hide the Next button.
   $("feedback").textContent = "";
   $("feedback").className = "feedback";
   $("next-btn").hidden = true;
@@ -231,6 +267,8 @@ function renderQuestion() {
   startTimer();
 }
 
+// Starts the per-question countdown, ticking every 0.1s.
+// When it reaches zero the question is treated as unanswered (wrong).
 function startTimer() {
   stopTimer();
   state.timeLeft = TIME_LIMIT;
@@ -242,11 +280,14 @@ function startTimer() {
   }, 100);
 }
 
+// Stops the countdown (on answer, timeout or game end).
 function stopTimer() {
   clearInterval(state.timerId);
   state.timerId = null;
 }
 
+// Shrinks the timer bar to match the time left and changes its color:
+// green above 50%, amber at 50% or less, red at 20% or less.
 function updateTimerBar() {
   const pct = (state.timeLeft / TIME_LIMIT) * 100;
   const fill = $("timer-fill");
@@ -255,12 +296,17 @@ function updateTimerBar() {
   fill.classList.toggle("danger", pct <= 20);
 }
 
+// Works out the points for a correct answer: the difficulty's base points
+// plus a speed bonus proportional to the time left (up to MAX_SPEED_BONUS).
 function calculatePoints(difficulty, timeLeft) {
   const base = POINTS[difficulty];
   const bonus = Math.round(base * MAX_SPEED_BONUS * (timeLeft / TIME_LIMIT));
   return { base, bonus, total: base + bonus };
 }
 
+// Handles a player's answer (choiceIndex 0–3) or a timeout (choiceIndex null):
+// locks the buttons, marks right/wrong, updates score and stats, shows feedback,
+// and reveals the Next button. Ignores repeat calls for the same question.
 function handleAnswer(choiceIndex) {
   if (state.answered) return;
   state.answered = true;
@@ -272,6 +318,7 @@ function handleAnswer(choiceIndex) {
   const isCorrect = choiceIndex === item.answer;
   const feedback = $("feedback");
 
+  // Disable all buttons; highlight the correct one green and a wrong pick red.
   buttons.forEach((btn, i) => {
     btn.disabled = true;
     if (i === item.answer) btn.classList.add("correct");
@@ -280,6 +327,7 @@ function handleAnswer(choiceIndex) {
 
   player.byDifficulty[item.difficulty].total++;
 
+  // Score the answer and show the matching message.
   if (isCorrect) {
     const pts = calculatePoints(item.difficulty, state.timeLeft);
     player.score += pts.total;
@@ -295,6 +343,7 @@ function handleAnswer(choiceIndex) {
     feedback.classList.add("bad");
   }
 
+  // Update scores and show Next (or "See Results" on the last question).
   renderScoreboard();
   const next = $("next-btn");
   next.textContent = state.current === state.queue.length - 1 ? "See Results" : "Next";
@@ -304,10 +353,12 @@ function handleAnswer(choiceIndex) {
   next.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
+// True once every question in the queue has been played.
 function isGameOver() {
   return state.current >= state.queue.length;
 }
 
+// Moves to the next question, or to the results screen after the last one.
 function nextQuestion() {
   state.current++;
   if (isGameOver()) showResults();
@@ -315,6 +366,10 @@ function nextQuestion() {
 }
 
 // ===== Results =====
+
+// Ends the game: saves scores to the leaderboard, picks a title
+// (high score / made the board / winner / tie), and shows each player's
+// final score, accuracy and per-difficulty breakdown.
 function showResults() {
   stopTimer();
   $("progress-fill").style.width = "100%";
@@ -328,6 +383,7 @@ function showResults() {
     players.map((p) => ({ name: p.name, score: p.score, length: state.settings.length }))
   );
 
+  // 1 player: celebrate a high score or leaderboard spot. 2 players: name the winner.
   if (players.length === 1) {
     const p = players[0];
     if (p.score > prevTop) title = "New High Score!";
@@ -341,6 +397,7 @@ function showResults() {
   }
   $("results-title").textContent = title;
 
+  // One result card per player; in 2-player games the top scorer gets an outline.
   const topScore = Math.max(...players.map((p) => p.score));
   $("results-body").innerHTML = players
     .map((p, i) => {
@@ -366,25 +423,38 @@ function showResults() {
 }
 
 // ===== Events =====
+// Wires up every button and input to the functions above.
+
+// Show the Player 2 name field only when "2 Players" is selected.
 document.querySelectorAll('input[name="players"]').forEach((radio) =>
   radio.addEventListener("change", () => {
     $("p2-field").hidden = readSettings().playerCount !== 2;
   })
 );
 
+// Start Game: begin a new game using the setup form.
 $("start-btn").addEventListener("click", () => startGame());
+
 // Pressing "done"/Enter on the phone keyboard closes it instead of doing nothing.
 ["p1-name", "p2-name"].forEach((id) =>
   $(id).addEventListener("keydown", (e) => {
     if (e.key === "Enter") e.target.blur();
   })
 );
+
+// Next: go to the next question (or results).
 $("next-btn").addEventListener("click", nextQuestion);
+
+// Play Again: same players and length, fresh questions.
 $("replay-btn").addEventListener("click", () => startGame(state.settings));
+
+// Main Menu: back to setup with an up-to-date leaderboard.
 $("menu-btn").addEventListener("click", () => {
   renderLeaderboard("leaderboard-setup");
   showScreen("setup");
 });
+
+// Clear leaderboard: wipe all saved scores after confirming.
 $("clear-lb-btn").addEventListener("click", () => {
   if (confirm("Clear all leaderboard scores?")) {
     localStorage.removeItem(LEADERBOARD_KEY);
@@ -392,7 +462,8 @@ $("clear-lb-btn").addEventListener("click", () => {
   }
 });
 
-// Keyboard shortcuts: A-D or 1-4 to answer, Enter for next.
+// Keyboard shortcuts during the quiz: A–D or 1–4 to answer.
+// (Enter for Next works because the Next button gets focus after answering.)
 document.addEventListener("keydown", (e) => {
   if (!screens.quiz.classList.contains("active")) return;
   if (!state.answered) {
@@ -403,12 +474,18 @@ document.addEventListener("keydown", (e) => {
 });
 
 // ===== Question source status =====
+// The status line on the setup screen showing where questions come from
+// (live from the API or built-in) and when the next refresh happens.
+
+// Turns a duration in milliseconds into friendly text like "12 min".
 function formatMinutes(ms) {
   const mins = Math.max(0, Math.round(ms / 60000));
   if (mins < 1) return "less than a minute";
   return `${mins} min`;
 }
 
+// Updates the status line from questionSource (see trivia-api.js) and
+// disables the "Get new questions now" button while a fetch is running.
 function renderQuestionStatus() {
   const s = questionSource;
   const status = $("question-status");
@@ -435,9 +512,14 @@ function renderQuestionStatus() {
   btn.disabled = s.loading;
 }
 
+// Redraw the status whenever the questions change, and every 30s so "x min ago" stays current.
 onQuestionSourceChange(renderQuestionStatus);
-setInterval(renderQuestionStatus, 30 * 1000); // keep the "x min ago" text current
+setInterval(renderQuestionStatus, 30 * 1000);
+
+// "Get new questions now" button: fetch a fresh set immediately.
 $("refresh-questions-btn").addEventListener("click", () => refreshQuestions());
 
+// ===== Startup =====
+// Show the saved leaderboard and begin loading/refreshing live questions.
 renderLeaderboard("leaderboard-setup");
 startQuestionAutoRefresh();

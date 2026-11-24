@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quiz Clash</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="app-header">
+      <h1>Quiz Clash</h1>
+      <p class="tagline">Easy → Medium → Hard. Harder questions score more points.</p>
+    </header>
+
+    <!-- SETUP SCREEN -->
+    <section id="setup-screen" class="screen active" aria-labelledby="setup-title">
+      <h2 id="setup-title">Game Setup</h2>
+
+      <fieldset class="field">
+        <legend>Players</legend>
+        <div class="toggle-group" role="radiogroup">
+          <label class="toggle">
+            <input type="radio" name="players" value="1" checked />
+            <span>1 Player</span>
+          </label>
+          <label class="toggle">
+            <input type="radio" name="players" value="2" />
+            <span>2 Players</span>
+          </label>
+        </div>
+      </fieldset>
+
+      <div class="field">
+        <label for="p1-name">Player 1 name</label>
+        <input id="p1-name" type="text" maxlength="16" placeholder="Player 1" />
+      </div>
+      <div class="field" id="p2-field" hidden>
+        <label for="p2-name">Player 2 name</label>
+        <input id="p2-name" type="text" maxlength="16" placeholder="Player 2" />
+      </div>
+
+      <fieldset class="field">
+        <legend>Game length (per player)</legend>
+        <div class="toggle-group" role="radiogroup">
+          <label class="toggle">
+            <input type="radio" name="length" value="short" />
+            <span>Short · 6</span>
+          </label>
+          <label class="toggle">
+            <input type="radio" name="length" value="standard" checked />
+            <span>Standard · 9</span>
+          </label>
+          <label class="toggle">
+            <input type="radio" name="length" value="long" />
+            <span>Long · 12</span>
+          </label>
+        </div>
+      </fieldset>
+
+      <ul class="points-legend">
+        <li><span class="badge easy">Easy</span> 10 pts</li>
+        <li><span class="badge medium">Medium</span> 20 pts</li>
+        <li><span class="badge hard">Hard</span> 30 pts</li>
+      </ul>
+      <p class="hint">Answer within 15 seconds for a speed bonus of up to +50%.</p>
+
+      <button id="start-btn" class="btn primary">Start Game</button>
+      <section class="leaderboard" aria-labelledby="lb-title-setup">
+        <h3 id="lb-title-setup">🏆 Top 5 Leaderboard</h3>
+        <ol id="leaderboard-setup" class="leaderboard-list"></ol>
+        <button id="clear-lb-btn" class="link-btn" type="button">Clear leaderboard</button>
+      </section>
+    </section>
+
+    <!-- QUIZ SCREEN -->
+    <section id="quiz-screen" class="screen" aria-live="polite">
+      <div class="scoreboard" id="scoreboard"></div>
+
+      <div class="progress-row">
+        <span id="progress-text"></span>
+        <span id="difficulty-badge" class="badge"></span>
+      </div>
+      <div class="progress-bar"><div id="progress-fill"></div></div>
+
+      <div class="turn-banner" id="turn-banner"></div>
+
+      <div class="timer-bar" aria-hidden="true"><div id="timer-fill"></div></div>
+
+      <h2 id="question-text" class="question"></h2>
+      <div id="answers" class="answers"></div>
+
+      <p id="feedback" class="feedback" role="status"></p>
+      <button id="next-btn" class="btn primary" hidden>Next</button>
+    </section>
+
+    <!-- RESULTS SCREEN -->
+    <section id="results-screen" class="screen">
+      <h2 id="results-title"></h2>
+      <div id="results-body" class="results-body"></div>
+      <section class="leaderboard" aria-labelledby="lb-title-results">
+        <h3 id="lb-title-results">🏆 Top 5 Leaderboard</h3>
+        <ol id="leaderboard-results" class="leaderboard-list"></ol>
+      </section>
+      <div class="btn-row">
+        <button id="replay-btn" class="btn primary">Play Again</button>
+        <button id="menu-btn" class="btn">Main Menu</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="questions.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

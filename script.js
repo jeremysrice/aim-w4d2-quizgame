@@ -253,10 +253,12 @@ function updateTimerBar(timeLeft) {
 // for the same question.
 function handleAnswer(choiceIndex) {
   if (state.answered) return;
+  const item = state.queue[state.current];
+  // Ignore an answer that doesn't exist on this question (e.g. "D" when there are only 2 choices).
+  if (choiceIndex !== null && !(Number.isInteger(choiceIndex) && choiceIndex >= 0 && choiceIndex < item.choices.length)) return;
   state.answered = true;
   stopTimer();
 
-  const item = state.queue[state.current];
   const timeLeft = choiceIndex === null ? 0 : getTimeLeft();
   const outcome = scoreAnswer(item, choiceIndex, timeLeft);
   state.players[item.playerIndex] = applyAnswer(state.players[item.playerIndex], item.difficulty, outcome);
@@ -400,6 +402,8 @@ $("clear-lb-btn").addEventListener("click", () => {
 // (Enter for Next works because the Next button gets focus after answering.)
 document.addEventListener("keydown", (e) => {
   if (!screens.quiz.classList.contains("active")) return;
+  // Leave browser shortcuts (Ctrl+1, Cmd+2, Alt+…) alone, and ignore a held-down key.
+  if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
   if (!state.answered) {
     const map = { a: 0, b: 1, c: 2, d: 3, 1: 0, 2: 1, 3: 2, 4: 3 };
     const idx = map[e.key.toLowerCase()];
@@ -423,6 +427,9 @@ function formatMinutes(ms) {
   if (mins < 1) return "less than a minute";
   return `${mins} min`;
 }
+
+// Timer that updates the refresh button's cool-down countdown.
+let cooldownTimer = null;
 
 // Updates the status line from questionSource (see trivia-api.js) and
 // disables the "Get new questions now" button while a fetch is running.
@@ -450,7 +457,16 @@ function renderQuestionStatus() {
 
   status.textContent = text;
   status.classList.toggle("loading", s.loading);
-  btn.disabled = s.loading;
+
+  // The button is off while fetching and during the 1-minute cool-down after
+  // a press, with a countdown that updates every second.
+  const wait = manualRefreshWaitMs(now);
+  btn.disabled = s.loading || wait > 0;
+  btn.textContent = wait > 0 && !s.loading
+    ? `↻ Get new questions again in ${Math.ceil(wait / 1000)}s`
+    : "↻ Get new questions now";
+  clearTimeout(cooldownTimer);
+  if (wait > 0) cooldownTimer = setTimeout(renderQuestionStatus, Math.min(1000, wait));
 }
 
 // Keep the "x min ago" text current.

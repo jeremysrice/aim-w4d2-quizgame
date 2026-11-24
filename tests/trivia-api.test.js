@@ -72,7 +72,7 @@ function installFetch(behavior) {
 function reset({ storage = fakeLocalStorage() } = {}) {
   Object.assign(questionSource, {
     bank: null, source: "built-in", fetchedAt: 0, nextRefreshAt: 0,
-    loading: false, error: null, partial: false,
+    loading: false, error: null, partial: false, lastManualRefreshAt: 0,
   });
   globalThis.safeStorage = createSafeStorage(() => storage);
   fakeNavigator = { onLine: true };
@@ -144,6 +144,36 @@ test("built-in questions: every tier still has at least 8 questions", () => {
   ["easy", "medium", "hard"].forEach((d) => assert.ok(QUESTION_BANK[d].length >= 8, d));
 });
 
+// ----- Refresh button cool-down -----
+test("refreshQuestions: the button can't fetch again until the cool-down ends", async () => {
+  reset();
+  const calls = installFetch(() => "ok");
+  await api.refreshQuestions({ force: true });
+  assert.equal(calls.length, 3);
+  assert.ok(api.manualRefreshWaitMs() > 0);
+  await api.refreshQuestions({ force: true }); // pressed again straight away
+  assert.equal(calls.length, 3, "a second press during the cool-down shouldn't fetch");
+  questionSource.lastManualRefreshAt = Date.now() - TRIVIA_CONFIG.manualCooldownMs - 1; // a minute later
+  assert.equal(api.manualRefreshWaitMs(), 0);
+  await api.refreshQuestions({ force: true });
+  assert.equal(calls.length, 6);
+});
+
+test("refreshQuestions: automatic refreshes aren't blocked by the button's cool-down", async () => {
+  reset();
+  questionSource.lastManualRefreshAt = Date.now();
+  const calls = installFetch(() => "ok");
+  await api.refreshQuestions();
+  assert.equal(calls.length, 3);
+});
+
+test("refreshQuestions: pressing the button while offline doesn't start the cool-down", async () => {
+  reset();
+  fakeNavigator = { onLine: false };
+  await api.refreshQuestions({ force: true });
+  assert.equal(api.manualRefreshWaitMs(), 0);
+});
+
 // ----- Fix 5a: keep partial results -----
 test("refreshQuestions: keeps the difficulties that succeeded when one fails", async () => {
   reset();
@@ -167,7 +197,24 @@ test("refreshQuestions: a failed difficulty keeps its previous live set", async 
   const oldHard = questionSource.bank.hard;
   installFetch((d) => (d === "hard" ? "error" : "ok"));
   await api.refreshQuestions({ force: true });
-  assert.equal(questionSource.bank.hard, oldHard);
+  assert.deepEqual(questionSource.bank.hard, oldHard);
+});
+
+test("refreshQuestions: a kept set drops questions that are now in a new set", async () => {
+  reset();
+  installFetch(() => "ok");
+  await api.refreshQuestions();
+  // Next refresh: medium fails, and the new easy set happens to include "medium 0".
+  globalThis.fetch = (url) => {
+    const d = new URL(url).searchParams.get("difficulty");
+    if (d === "medium") return Promise.resolve({ ok: false, status: 500, json: async () => ({}) });
+    const results = (d === "easy" ? ["medium 0", "easy new"] : ["hard new"]).map(apiQuestion);
+    return Promise.resolve({ ok: true, status: 200, json: async () => ({ response_code: 0, results }) });
+  };
+  await api.refreshQuestions({ force: true });
+  const medium = questionSource.bank.medium.map((x) => x.q);
+  assert.equal(medium.length, 4);
+  assert.ok(!medium.includes("medium 0"));
 });
 
 test("refreshQuestions: full success is not partial and schedules the 30-minute refresh", async () => {

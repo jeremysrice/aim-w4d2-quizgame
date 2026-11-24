@@ -14,7 +14,7 @@ A quiz game for one or two players, built with plain HTML, CSS and JavaScript (n
 - **Top 5 leaderboard:** saved in the browser with `localStorage`. Higher scores push lower ones off the board, and dropped scores are deleted.
 - **Game lengths:** Short (6 questions per player), Standard (9) or Long (12).
 - **Phone and tablet friendly:** large touch targets, support for notched screens, and layouts for small phones, phones in landscape and tablets.
-- **Keyboard shortcuts:** press `A`–`D` or `1`–`4` to answer and `Enter` to go to the next question.
+- **Keyboard shortcuts:** press `A`–`D` or `1`–`4` to answer and `Enter` to go to the next question. Browser shortcuts like Ctrl+1 are left alone.
 
 ## Run locally
 

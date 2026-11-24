@@ -12,6 +12,7 @@ const TRIVIA_CONFIG = {
   refreshMs: 30 * 60 * 1000, // fetch a new set every 30 minutes
   retryAfterFailureMs: 5 * 60 * 1000, // try again in 5 min if a fetch fails (or only partly works)
   waitForOtherTabMs: 60 * 1000, // re-check after 1 min if another tab is already fetching
+  manualCooldownMs: 60 * 1000, // after "Get new questions now", wait 1 min before it works again
   questionsPerDifficulty: 20, // how many to fetch per difficulty (API max is 50)
   // Which Open Trivia DB difficulty fills each game tier. Shifted down one
   // level to keep the game easy: its "hard" questions are very obscure.
@@ -34,6 +35,7 @@ const questionSource = {
   loading: false, // true while this tab is fetching
   error: null, // null | "offline" | "failed"
   partial: false, // true if the last refresh only got some difficulties
+  lastManualRefreshAt: 0, // when "Get new questions now" last started a refresh (ms timestamp)
   started: false, // true once startQuestionAutoRefresh has run
   listeners: [], // functions to call whenever any of the above changes
 };
@@ -243,6 +245,12 @@ async function withRefreshLock(task) {
   }
 }
 
+// How long (ms) until "Get new questions now" works again; 0 if it's ready.
+// The cool-down stops repeated presses from hitting the API's rate limit.
+function manualRefreshWaitMs(now = Date.now()) {
+  return Math.max(0, questionSource.lastManualRefreshAt + TRIVIA_CONFIG.manualCooldownMs - now);
+}
+
 // Fetches a fresh set of questions and makes it the active bank.
 //   - Only one tab fetches at a time; other tabs pick up its results through
 //     the shared cache (see handleStorageEvent).
@@ -254,12 +262,14 @@ async function withRefreshLock(task) {
 //     questions stay and it retries in 5 minutes.
 async function refreshQuestions({ force = false } = {}) {
   if (questionSource.loading) return; // this tab is already fetching
+  if (force && manualRefreshWaitMs() > 0) return; // button pressed again too soon
   if (globalThis.navigator && globalThis.navigator.onLine === false) {
     questionSource.error = "offline";
     questionSource.nextRefreshAt = Date.now() + TRIVIA_CONFIG.retryAfterFailureMs;
     notifyQuestionListeners();
     return;
   }
+  if (force) questionSource.lastManualRefreshAt = Date.now(); // start the cool-down
 
   const ran = await withRefreshLock(async () => {
     // Another tab may have just refreshed: use its questions instead of fetching again.
@@ -280,8 +290,16 @@ async function refreshQuestions({ force = false } = {}) {
         questionSource.nextRefreshAt = now + TRIVIA_CONFIG.retryAfterFailureMs;
         return;
       }
-      // Keep new sets; difficulties that failed keep their previous live set (if any).
-      questionSource.bank = { ...(questionSource.bank || {}), ...fetched };
+      // Keep new sets; difficulties that failed keep their previous live set (if any),
+      // minus any question that's now in a new set (easy and medium share an API
+      // level, so they can overlap). A kept set left empty falls back to built-in.
+      const newQuestions = new Set(Object.values(fetched).flat().map((item) => item.q));
+      const bank = {};
+      failed.forEach((d) => {
+        const kept = ((questionSource.bank || {})[d] || []).filter((item) => !newQuestions.has(item.q));
+        if (kept.length) bank[d] = kept;
+      });
+      questionSource.bank = { ...bank, ...fetched };
       questionSource.source = "live";
       questionSource.fetchedAt = now;
       questionSource.partial = failed.length > 0;
@@ -349,6 +367,6 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     TRIVIA_CONFIG, questionSource, onQuestionSourceChange, getActiveBank,
     loadQuestionCache, saveQuestionCache, normalizeApiQuestion, fetchDifficulty,
-    fetchAllDifficulties, refreshQuestions, handleStorageEvent,
+    fetchAllDifficulties, refreshQuestions, manualRefreshWaitMs, handleStorageEvent,
   };
 }

@@ -85,8 +85,8 @@ FILE: game-logic.js
 SECTION: Config
 ----------------------------------------------------------------------
 Points per difficulty, the order of difficulties, questions per game
-length, the most players (2), the timer length, the size of the speed
-bonus and the leaderboard size.
+length, the most players (2), the timer length (60 seconds), the size
+of the speed bonus and the leaderboard size.
 
 Where it could break:
   - If the time limit is set to 0, there's no time to answer, so every
@@ -219,7 +219,9 @@ SECTION: Config
 ----------------------------------------------------------------------
 All the settings in one object: the API address, the 30-minute refresh,
 the 5-minute retry, the 1-minute wait when another tab is fetching, 20
-questions per difficulty, the 5.5-second gap between requests, the
+questions per difficulty, which easier API level fills each game level
+(easy and medium use the API's "easy", hard uses its "medium"), the
+5.5-second gap between requests, the
 10-second request timeout, 3 attempts when rate-limited, the cache key
 and version, and the name of the cross-tab lock.
 
@@ -313,9 +315,15 @@ fetchDifficulty
                   fails that difficulty straight away.
 
 fetchAllDifficulties
-  What it does:   Fetches each difficulty in turn, 5.5 seconds apart.
-                  A failure on one doesn't stop the others.
-  Could break:    No known issues.
+  What it does:   Fetches each game level in turn, 5.5 seconds apart,
+                  asking the API for the easier level set in the
+                  config. Questions already fetched for an earlier
+                  level are dropped, since easy and medium share the
+                  API's "easy" pool. A failure on one doesn't stop the
+                  others.
+  Could break:    If the API sends only repeats for a level, that
+                  level counts as failed and uses its previous set or
+                  the built-in questions.
 
 withRefreshLock
   What it does:   Uses the browser's Web Locks API so only one tab
@@ -327,18 +335,26 @@ withRefreshLock
                   devices, or tabs of a local copy opened from disk,
                   can still hit the rate limit together.
 
+manualRefreshWaitMs
+  What it does:   Says how long until "Get new questions now" works
+                  again (0 if it's ready). The cool-down is 1 minute
+                  from each press.
+  Could break:    The cool-down is per tab, so pressing the button in
+                  several tabs at once can still hit the rate limit.
+
 refreshQuestions
   What it does:   Fetches a fresh set of questions. It first checks
                   whether another tab just refreshed (unless the button
                   forced it), keeps any difficulties that succeed,
                   retries in 5 minutes after a failure or partial
                   result, and waits a minute if another tab is fetching.
-  Could break:    - After a partial refresh, the status shows the new
-                    fetch time, even though a failed difficulty may
-                    still be using an older live set.
-                  - The "Get new questions now" button has no
-                    cool-down, so repeated presses can hit the rate
-                    limit.
+                  A failed level keeps its previous live set, minus
+                  any question that's now in a new set. A forced refresh
+                  (the button) is ignored during the 1-minute
+                  cool-down; automatic refreshes aren't affected.
+  Could break:    After a partial refresh, the status shows the new
+                  fetch time, even though a failed difficulty may
+                  still be using an older live set.
 
 ----------------------------------------------------------------------
 SECTION: Auto-refresh
@@ -510,7 +526,9 @@ handleAnswer
   What it does:   Handles an answer or a timeout. It scores the answer
                   with the game-logic functions, updates the player,
                   then hands off to showAnswerFeedback. A second call
-                  for the same question is ignored.
+                  for the same question is ignored, and so is an
+                  answer that doesn't exist on the question (like D
+                  on a 2-choice question).
   Could break:    Everything depends on the "already answered" flag
                   being reset only in renderQuestion.
 
@@ -546,11 +564,11 @@ SECTION: Events
 ----------------------------------------------------------------------
 Connects the page to the game: the player-count options, the Start,
 Next, Play Again, Main Menu and Clear leaderboard buttons, closing the
-phone keyboard with Enter, the A-D and 1-4 shortcuts, and updating the
+phone keyboard with Enter, the A-D and 1-4 shortcuts (ignored with
+Ctrl, Alt or Cmd held, or when a key is held down), and updating the
 timer straight away when the player returns to the tab.
 
 Where it could break:
-  - The shortcuts don't ignore modifier keys, so Ctrl+1 also answers.
   - Some in-app browsers block confirm(), so Clear leaderboard does
     nothing there.
 
@@ -565,7 +583,9 @@ formatMinutes
 renderQuestionStatus
   What it does:   Updates the status line: fetching, live (fully or
                   partly updated), offline, failed or built-in. It
-                  disables "Get new questions now" while fetching.
+                  disables "Get new questions now" while fetching and
+                  during its cool-down, showing a countdown that
+                  updates every second.
   Could break:    Reads the shared status directly instead of the copy
                   it's given.
 
@@ -582,7 +602,9 @@ REMAINING RISKS
 The six highest risks from the earlier version (storage errors, stuck
 requests, the tick-counting timer, running out of questions, rate
 limits across tabs, and all-or-nothing refreshes) are fixed and covered
-by tests. The biggest remaining ones are:
+by tests. Since then, the refresh button got a 1-minute cool-down and
+the keyboard shortcuts ignore Ctrl, Alt and Cmd. The biggest remaining
+ones are:
 
 1. Rate limits across devices
    Where:  withRefreshLock, refreshQuestions
@@ -590,23 +612,15 @@ by tests. The biggest remaining ones are:
            can still block each other, and fall back to built-in
            questions until a retry works.
 
-2. No cool-down on "Get new questions now"
-   Where:  refreshQuestions (button handler)
-   Effect: Repeated presses can trigger the API's rate limit.
-
-3. Games can be shortened silently
+2. Games can be shortened silently
    Where:  buildQueue
    Effect: Players aren't told if there weren't enough questions for
            the chosen length.
 
-4. Storage that fills up after page load
+3. Storage that fills up after page load
    Where:  createSafeStorage, renderStorageNote
    Effect: The setup screen doesn't warn; only the results screen does.
 
-5. Keyboard shortcuts ignore modifier keys
-   Where:  Events
-   Effect: Browser shortcuts like Ctrl+1 also answer a question.
-
-6. One leaderboard for all game lengths
+4. One leaderboard for all game lengths
    Where:  mergeLeaderboard
    Effect: Long-game scores crowd out Short and Standard ones.

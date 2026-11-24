@@ -14,7 +14,7 @@ The code is in four files:
                   builds 4 tools)
   game-logic.js   the game's rules, with no page code (14 functions)
   trivia-api.js   live questions from the Open Trivia Database
-                  (15 functions)
+                  (16 functions)
   script.js       page and display code (24 functions including $, plus
                   button and keyboard handlers)
 
@@ -409,8 +409,12 @@ CHANGE  Use the API's session tokens so new sets don't repeat
 ----------------------------------------------------------------------
 fetchAllDifficulties
 ----------------------------------------------------------------------
-DOES    Fetches easy, medium and hard in turn, 5.5 seconds apart. A
-        failure on one doesn't stop the others.
+DOES    Fetches easy, medium and hard in turn, 5.5 seconds apart,
+        asking the API one level easier (easy and medium use its
+        "easy", hard uses its "medium"; see apiDifficulty in the
+        config). Questions already fetched for an earlier level are
+        dropped so none repeat. A failure on one doesn't stop the
+        others.
 
 INPUT   None.
         Returns a promise of fetched (the questions that arrived, by
@@ -435,24 +439,40 @@ CHANGE  Coordinate across devices too, through a small shared server
         network from sharing the API's rate limit.
 
 ----------------------------------------------------------------------
+manualRefreshWaitMs
+----------------------------------------------------------------------
+DOES    Says how long until "Get new questions now" works again. The
+        button has a 1-minute cool-down after each press so repeated
+        presses can't hit the API's rate limit.
+
+INPUT   now (number, optional): the current time in ms. Defaults to
+        Date.now().
+        Returns the wait in ms, or 0 if the button is ready.
+
+CHANGE  Share the cool-down between tabs through storage, so pressing
+        the button in several tabs can't get around it.
+
+----------------------------------------------------------------------
 refreshQuestions
 ----------------------------------------------------------------------
 DOES    Fetches a fresh set of questions and makes it the active set.
         Only one tab fetches at a time. Unless forced, it first uses
         another tab's fresh questions if there are any. It keeps any
         difficulties that succeed, and retries in 5 minutes after a
-        failure or partial result. If another tab is fetching, it waits
-        a minute.
+        failure or partial result. A failed level keeps its previous
+        live set, minus any question that's now in a new set. If
+        another tab is fetching, it waits a minute. A forced refresh
+        is ignored during the button's 1-minute cool-down; automatic
+        refreshes aren't affected.
 
 INPUT   options (optional): force (true or false). The "Get new
-        questions now" button passes true to skip the freshness check.
+        questions now" button passes true to skip the freshness check
+        (and start the cool-down).
         Returns a promise that finishes when done. It handles its own
         errors.
 
-CHANGE  - Add a cool-down of a minute or so after a forced refresh, so
-          repeated button presses can't hit the rate limit.
-        - Record a fetch time for each difficulty, so the status line
-          is accurate after a partial refresh.
+CHANGE  Record a fetch time for each difficulty, so the status line
+        is accurate after a partial refresh.
 
 ----------------------------------------------------------------------
 checkQuestionRefresh
@@ -713,10 +733,12 @@ handleAnswer
 DOES    Handles an answer or a timeout. It stops the timer, scores the
         answer with scoreAnswer and applyAnswer (game-logic.js), and
         hands off to showAnswerFeedback. A second call for the same
-        question is ignored.
+        question is ignored, and so is an answer that doesn't exist on
+        the question (like D on a 2-choice question).
 
 INPUT   choiceIndex (number or nothing): 0-3 for A-D, or null when
-        time runs out.
+        time runs out. Anything outside the question's choices is
+        ignored.
         Returns nothing.
 
 CHANGE  Nothing needed. The earlier suggestion (separate scoring from
@@ -790,7 +812,9 @@ renderQuestionStatus
 ----------------------------------------------------------------------
 DOES    Updates the status line: fetching, live (fully or partly
         updated), offline, failed or built-in. It disables "Get new
-        questions now" while this tab is fetching.
+        questions now" while this tab is fetching and during its
+        1-minute cool-down, when the button shows a countdown that
+        updates every second.
 
 INPUT   None. It reads questionSource directly.
         Returns nothing.
@@ -912,13 +936,16 @@ HANDLER: Keyboard shortcuts (keydown on the whole page)
 LISTENS TO  Every key press on the page.
 
 DOES    While a question is waiting for an answer, A-D or 1-4 answers
-        it. (Enter for Next works because the Next button has focus.)
+        it. Key presses with Ctrl, Alt or Cmd held are ignored, so
+        browser shortcuts like Ctrl+1 don't also answer, and so is a
+        held-down key. A letter or number with no matching choice is
+        ignored too. (Enter for Next works because the Next button has
+        focus.)
 
-INPUT   A keydown event. It reads event.key.
+INPUT   A keydown event. It reads event.key, the modifier keys and
+        event.repeat.
 
-CHANGE  - Ignore key presses with Ctrl, Alt or Cmd held, so browser
-          shortcuts like Ctrl+1 don't also answer.
-        - Show the shortcuts on screen.
+CHANGE  Show the shortcuts on screen.
 
 ----------------------------------------------------------------------
 HANDLER: Returning to the tab (visibilitychange)
@@ -943,11 +970,12 @@ LISTENS TO  The "Get new questions now" button (id
 
 DOES    Starts a forced refresh with refreshQuestions({ force: true }),
         skipping the check for another tab's fresh questions. The
-        button is disabled while this tab is fetching.
+        button is disabled while this tab is fetching and for 1 minute
+        after each press, with a countdown on the button.
 
 INPUT   A click event, which it ignores.
 
-CHANGE  Add a cool-down of a minute or so after each press.
+CHANGE  Nothing needed.
 
 
 ######################################################################
@@ -964,13 +992,17 @@ DONE: the six changes previously listed as "do first"
   6. Scoring separated from display (game-logic.js), with unit tests
      in tests/.
 
+ALSO DONE since then
+  - A 1-minute cool-down on "Get new questions now"
+    (manualRefreshWaitMs, refreshQuestions, renderQuestionStatus).
+  - Keyboard shortcuts ignore Ctrl, Alt, Cmd and held-down keys, and
+    answers that don't exist on the question are ignored
+    (keyboard handler, handleAnswer).
+
 NEXT: changes I'd make now
-  1. Add a cool-down to "Get new questions now", so repeated presses
-     can't hit the API's rate limit.
-  2. Tell players when a game was shortened because there weren't
+  1. Tell players when a game was shortened because there weren't
      enough questions.
-  3. Ignore Ctrl, Alt and Cmd in the keyboard shortcuts.
-  4. Replace confirm() with a confirmation inside the page.
-  5. Keep a separate leaderboard for each game length.
-  6. Build the page with elements instead of HTML strings, and make $
+  2. Replace confirm() with a confirmation inside the page.
+  3. Keep a separate leaderboard for each game length.
+  4. Build the page with elements instead of HTML strings, and make $
      report missing ids clearly.

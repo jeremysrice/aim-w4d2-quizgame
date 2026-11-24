@@ -271,7 +271,31 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
 #timer-fill.warning { background: var(--medium); }
 #timer-fill.danger { background: var(--hard); }
 
+.category {
+  margin-top: 1.1rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.category:empty { display: none; }
+.category + .question { margin-top: 0.3rem; }
 .question { font-size: clamp(1.15rem, 4.5vw, 1.5rem); margin: 1.25rem 0; line-height: 1.35; }
+
+/* ----- Question source status (setup screen) ----- */
+.question-source {
+  margin-bottom: 1rem;
+  padding: 0.6rem 0.8rem 0.2rem;
+  border-radius: 10px;
+  background: var(--bg);
+  text-align: center;
+}
+.question-status { font-size: 0.88rem; color: var(--muted); }
+.question-status.loading { animation: pulse 1.2s ease-in-out infinite; }
+.question-source .link-btn { margin-top: 0; min-height: 40px; }
+.link-btn:disabled { opacity: 0.4; cursor: default; }
+@keyframes pulse { 50% { opacity: 0.5; } }
 
 .answers { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
 .answer-btn {

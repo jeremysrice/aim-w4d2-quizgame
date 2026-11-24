@@ -125,9 +125,10 @@ function readSettings() {
 function buildQueue(playerCount, perDifficulty) {
   // Each player gets unique questions; pool is shuffled per difficulty and split.
   const perPlayer = Array.from({ length: playerCount }, () => []);
+  const bank = getActiveBank(); // live questions if loaded, otherwise built-in
 
   DIFFICULTIES.forEach((difficulty) => {
-    const pool = shuffle(QUESTION_BANK[difficulty]);
+    const pool = shuffle(bank[difficulty]);
     for (let p = 0; p < playerCount; p++) {
       const slice = pool.slice(p * perDifficulty, (p + 1) * perDifficulty);
       slice.forEach((item) => {
@@ -138,6 +139,7 @@ function buildQueue(playerCount, perDifficulty) {
           playerIndex: p,
           difficulty,
           q: item.q,
+          category: item.category || "",
           choices,
           answer: choices.indexOf(correctText),
         });
@@ -209,6 +211,7 @@ function renderQuestion() {
     banner.hidden = true;
   }
 
+  $("question-category").textContent = item.category;
   $("question-text").textContent = item.q;
 
   const answersEl = $("answers");
@@ -399,4 +402,42 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+// ===== Question source status =====
+function formatMinutes(ms) {
+  const mins = Math.max(0, Math.round(ms / 60000));
+  if (mins < 1) return "less than a minute";
+  return `${mins} min`;
+}
+
+function renderQuestionStatus() {
+  const s = questionSource;
+  const status = $("question-status");
+  const btn = $("refresh-questions-btn");
+  const now = Date.now();
+  let text;
+
+  if (s.loading) {
+    text = "⏳ Fetching new questions…";
+  } else if (s.source === "live") {
+    text = `🌐 Live questions · updated ${formatMinutes(now - s.fetchedAt)} ago`;
+    if (s.error) text += " · couldn't refresh, retrying soon";
+    else text += ` · new set in ${formatMinutes(s.nextRefreshAt - now)}`;
+  } else if (s.error === "offline") {
+    text = "📴 Offline · using built-in questions";
+  } else if (s.error) {
+    text = "⚠️ Couldn't reach the question server · using built-in questions";
+  } else {
+    text = "📚 Using built-in questions";
+  }
+
+  status.textContent = text;
+  status.classList.toggle("loading", s.loading);
+  btn.disabled = s.loading;
+}
+
+onQuestionSourceChange(renderQuestionStatus);
+setInterval(renderQuestionStatus, 30 * 1000); // keep the "x min ago" text current
+$("refresh-questions-btn").addEventListener("click", () => refreshQuestions());
+
 renderLeaderboard("leaderboard-setup");
+startQuestionAutoRefresh();

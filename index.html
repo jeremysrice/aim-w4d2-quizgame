@@ -71,6 +71,11 @@
       </ul>
       <p class="hint">Answer within 15 seconds for a speed bonus of up to +50%.</p>
 
+      <div class="question-source">
+        <p id="question-status" class="question-status" role="status"></p>
+        <button id="refresh-questions-btn" class="link-btn" type="button">↻ Get new questions now</button>
+      </div>
+
       <button id="start-btn" class="btn primary">Start Game</button>
       <section class="leaderboard" aria-labelledby="lb-title-setup">
         <h3 id="lb-title-setup">🏆 Top 5 Leaderboard</h3>
@@ -93,6 +98,7 @@
 
       <div class="timer-bar" aria-hidden="true"><div id="timer-fill"></div></div>
 
+      <p id="question-category" class="category"></p>
       <h2 id="question-text" class="question"></h2>
       <div id="answers" class="answers"></div>
 
@@ -116,6 +122,7 @@
   </main>
 
   <script src="questions.js"></script>
+  <script src="trivia-api.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

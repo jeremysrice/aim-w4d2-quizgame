@@ -44,3 +44,8 @@ const QUESTION_BANK = {
     { q: "Who developed the theory of general relativity?", choices: ["Isaac Newton", "Niels Bohr", "Albert Einstein", "Max Planck"], answer: 2 },
   ],
 };
+
+// Lets the Node unit tests load this file; ignored in the browser.
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { QUESTION_BANK };
+}

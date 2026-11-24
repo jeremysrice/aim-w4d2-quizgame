@@ -31,14 +31,30 @@ cd aim-w4d2-quizgame
 | --- | --- |
 | `index.html` | Markup for the setup, quiz and results screens |
 | `style.css` | Theme, responsive layout and phone/tablet breakpoints |
+| `storage.js` | Safe wrapper for browser storage. If storage is blocked or full, the game keeps working instead of crashing |
 | `questions.js` | Built-in backup questions, sorted into easy, medium and hard |
-| `trivia-api.js` | Fetches live questions from Open Trivia DB, caches them and refreshes every 30 minutes |
-| `script.js` | Game state, turn order, scoring, timer and leaderboard |
+| `game-logic.js` | Game rules with no page code: settings, building a game, timing, scoring, results and leaderboard math |
+| `trivia-api.js` | Fetches live questions from Open Trivia DB with request timeouts, partial results and cross-tab coordination; caches them and refreshes every 30 minutes |
+| `script.js` | Page and display code: screens, buttons, timer display, results and leaderboard |
+| `tests/` | Unit tests for the game rules, storage and live-question code |
+
+The page loads the scripts in this order: `storage.js`, `questions.js`, `game-logic.js`, `trivia-api.js`, then `script.js`. Each file uses things defined in the ones loaded before it.
+
+## Tests
+
+The tests use Node's built-in test runner, so there's nothing to install. Node 18 or later is required. From the project folder, run:
+
+```bash
+npm test
+```
+
+You can also run `node --test` directly. The tests use fake network responses, so they never call the real trivia API.
 
 ## Customizing
 
-- **Change the refresh interval:** edit `QUESTION_REFRESH_MS` in `trivia-api.js`.
-- **Add backup questions:** add entries to the `easy`, `medium` or `hard` lists in `questions.js`. Each entry looks like `{ q, choices: [4 options], answer: indexOfCorrectChoice }`. Each difficulty needs at least 8 questions for a two-player Long game.
-- **Change point values:** edit `POINTS` in `script.js`.
-- **Turn off the speed bonus:** set `MAX_SPEED_BONUS = 0` in `script.js`.
-- **Change the timer:** edit `TIME_LIMIT` (in seconds) in `script.js`.
+- **Change point values:** edit `POINTS` in `game-logic.js`.
+- **Turn off the speed bonus:** set `MAX_SPEED_BONUS = 0` in `game-logic.js`.
+- **Change the timer:** edit `TIME_LIMIT` (in seconds) in `game-logic.js`.
+- **Change the game lengths:** edit `LENGTHS` in `game-logic.js`. If a difficulty runs short of questions, the game is shortened evenly for everyone.
+- **Change the refresh interval:** edit `refreshMs` in `TRIVIA_CONFIG` in `trivia-api.js`.
+- **Add backup questions:** add entries to the `easy`, `medium` or `hard` lists in `questions.js`. Each entry looks like `{ q, choices: [2–4 options], answer: indexOfCorrectChoice }`. Choices must not repeat. Each difficulty should have at least 8 questions so a two-player Long game never has to be shortened; a test checks this.

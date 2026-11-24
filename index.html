@@ -76,10 +76,12 @@
         <button id="refresh-questions-btn" class="link-btn" type="button">↻ Get new questions now</button>
       </div>
 
+      <p id="setup-error" class="notice error" role="alert" hidden></p>
       <button id="start-btn" class="btn primary">Start Game</button>
       <section class="leaderboard" aria-labelledby="lb-title-setup">
         <h3 id="lb-title-setup">🏆 Top 5 Leaderboard</h3>
         <ol id="leaderboard-setup" class="leaderboard-list"></ol>
+        <p id="lb-storage-note" class="notice" hidden>This browser isn't allowing saved data, so scores last only until you close the page.</p>
         <button id="clear-lb-btn" class="link-btn" type="button">Clear leaderboard</button>
       </section>
     </section>
@@ -110,6 +112,7 @@
     <section id="results-screen" class="screen">
       <h2 id="results-title"></h2>
       <div id="results-body" class="results-body"></div>
+      <p id="results-note" class="notice" role="status" hidden></p>
       <section class="leaderboard" aria-labelledby="lb-title-results">
         <h3 id="lb-title-results">🏆 Top 5 Leaderboard</h3>
         <ol id="leaderboard-results" class="leaderboard-list"></ol>
@@ -121,7 +124,10 @@
     </section>
   </main>
 
+  <!-- Load order matters: each file uses things defined in the ones above it. -->
+  <script src="storage.js"></script>
   <script src="questions.js"></script>
+  <script src="game-logic.js"></script>
   <script src="trivia-api.js"></script>
   <script src="script.js"></script>
 </body>

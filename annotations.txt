@@ -8,608 +8,276 @@ Quiz Clash mini-app. For each function:
   INPUT   what it expects to receive (and what it returns)
   CHANGE  what I would change, and why
 
-The functions are in two files:
+The code is in four files:
 
-  script.js      the game itself (25 functions including $, plus
-                 button and keyboard handlers)
-  trivia-api.js  live questions from the Open Trivia Database
-                 (11 functions)
+  storage.js      safe wrapper around browser storage (1 function that
+                  builds 4 tools)
+  game-logic.js   the game's rules, with no page code (14 functions)
+  trivia-api.js   live questions from the Open Trivia Database
+                  (15 functions)
+  script.js       page and display code (24 functions including $, plus
+                  button and keyboard handlers)
 
-questions.js holds only question data and has no functions.
+questions.js holds only question data and has no functions. The tests
+in tests/ aren't annotated here.
+
+These notes describe the code after the six high-risk fixes. Where a
+fix answered an earlier suggestion, the entry says so.
 
 A note on terms:
   - "Storage" means the browser's localStorage, which keeps small
     amounts of data on the player's device between visits.
   - "Element" means a part of the page, such as a button or text box.
   - "Rendering" means drawing or updating part of the page.
+  - A "promise" is JavaScript's way of representing something that
+    finishes later, such as a network request.
 
 
 ######################################################################
-FILE: script.js
+FILE: storage.js
 ######################################################################
 
 ----------------------------------------------------------------------
-$
+createSafeStorage
 ----------------------------------------------------------------------
-DOES    Finds a page element by its id. It's a shortcut for
-        document.getElementById.
+DOES    Builds the storage wrapper the app uses for all saved data. It
+        tests the real storage once by writing and removing a test key.
+        If that fails, everything is kept in memory instead. The
+        wrapper has four parts:
+          get(key, fallback)  reads a saved value, or returns fallback
+                              if it's missing or corrupted
+          set(key, value)     saves a value; returns true if saved
+                              permanently, false if kept in memory only
+          remove(key)         deletes a value
+          persistent          true if saved data survives closing the
+                              page
 
-INPUT   id (text): the id of an element in index.html, such as
-        "start-btn".
-        Returns the element, or null if no element has that id.
+INPUT   getBackend (function): returns the real storage object,
+        normally localStorage. It's a function because in some browsers
+        just touching localStorage throws an error when it's blocked.
+        Returns the wrapper.
 
-CHANGE  Make it raise a clear error when the id doesn't exist, for
-        example: Missing element: #start-btn. Right now a typo returns
-        null, and the crash happens later with a vague message, far
-        from the real cause.
+CHANGE  - Re-check persistent after a failed write, so the setup screen
+          can warn when storage fills up during a visit, not just when
+          it's blocked from the start.
+        - Offer a way to clear only the app's own keys.
 
 ----------------------------------------------------------------------
-showScreen
+safeStorage
 ----------------------------------------------------------------------
-DOES    Hides all three screens, shows the requested one and scrolls to
-        the top of the page.
+DOES    The single shared wrapper the whole app uses, created by
+        createSafeStorage and backed by localStorage when available.
 
-INPUT   name (text): "setup", "quiz" or "results".
-        Returns nothing.
+INPUT   None. It's created once when the page loads.
 
-CHANGE  - Move keyboard focus to the new screen's heading, so screen
-          reader and keyboard users know the screen changed.
-        - Ignore unknown names instead of crashing.
+CHANGE  Nothing needed. The earlier suggestion of "one safe helper used
+        everywhere" is what this is.
+
+
+######################################################################
+FILE: game-logic.js
+######################################################################
 
 ----------------------------------------------------------------------
 shuffle
 ----------------------------------------------------------------------
-DOES    Returns a new list with the same items in random order. The
-        original list isn't changed. It uses the Fisher-Yates method,
-        which gives every order an equal chance.
+DOES    Returns a new list with the same items in random order, using
+        the Fisher-Yates method. The original list isn't changed.
 
-INPUT   arr (list): a list of anything, such as questions or answer
-        choices.
+INPUT   arr (list): items to shuffle.
+        random (function, optional): returns a number from 0 to just
+          under 1. Defaults to Math.random. Tests pass a predictable
+          one so the order is the same every run.
         Returns a new shuffled list.
 
-CHANGE  Nothing needed for a game. If the game ever needed repeatable
-        results (a "daily challenge" that's the same for everyone, or
-        tests), I'd let it take a seeded random-number generator, so
-        the same seed always gives the same order.
+CHANGE  Nothing needed. The earlier suggestion (accept a seeded random
+        function) is done.
 
 ----------------------------------------------------------------------
-escapeHTML
+makeId
 ----------------------------------------------------------------------
-DOES    Turns text into HTML-safe text, so characters like < and > in a
-        player's name or an answer show as text instead of being read
-        as HTML.
+DOES    Creates a unique id for a leaderboard entry. It uses the
+        browser's crypto.randomUUID where allowed (https pages and
+        localhost), and the time plus a random string elsewhere.
 
-INPUT   str (text): any text, such as a player name.
-        Returns the escaped text.
+INPUT   None.
+        Returns the id (text).
 
-CHANGE  - It creates a throwaway page element on every call. A simple
-          find-and-replace of & < > " ' would be faster and would also
-          make it safe inside HTML attributes, which it isn't now.
-        - Better still, build the leaderboard, scoreboard and results
-          with document.createElement and textContent instead of HTML
-          strings. Then no escaping is needed at all.
+CHANGE  Nothing needed for a 5-entry leaderboard.
 
 ----------------------------------------------------------------------
-getLeaderboard
+isValidQuestion
 ----------------------------------------------------------------------
-DOES    Reads the saved Top 5 leaderboard from storage. Returns an
-        empty list if nothing is saved or the data is corrupted.
+DOES    Checks a question is safe to play: it has text, 2-4 non-empty
+        choices with no repeats (ignoring case and spaces), and a
+        correct-answer position that exists.
 
-INPUT   None. It reads storage directly.
-        Returns a list of entries, each with an id, name, score,
-        length (game length) and date.
-
-CHANGE  - Check each entry, not just the list: keep only entries that
-          have a numeric score and date and a text name. Today one
-          damaged entry can break sorting or display.
-        - Read storage in one safe helper used everywhere, so blocked
-          storage can't crash the game (see saveLeaderboard).
-
-----------------------------------------------------------------------
-saveLeaderboard
-----------------------------------------------------------------------
-DOES    Writes the leaderboard list to storage.
-
-INPUT   board (list): leaderboard entries, already sorted and trimmed
-        to 5.
-        Returns nothing.
-
-CHANGE  Catch errors. If storage is full or blocked (private browsing,
-        or cookies turned off), the error currently escapes into
-        showResults and the results screen never appears. I'd catch
-        it, show the results anyway and add a note that the score
-        couldn't be saved.
-
-----------------------------------------------------------------------
-sortBoard
-----------------------------------------------------------------------
-DOES    Orders leaderboard entries with the highest score first. When
-        two scores tie, the more recent one ranks higher.
-
-INPUT   board (list): leaderboard entries.
-        Returns the same list, now sorted. The original list itself is
-        reordered, not copied.
-
-CHANGE  Return a sorted copy instead of reordering the list it was
-        given. Changing the input is a common source of surprise bugs
-        when the same list is used elsewhere.
-
-----------------------------------------------------------------------
-qualifiesForLeaderboard
-----------------------------------------------------------------------
-DOES    Says whether a score would earn a place in the current Top 5.
-        Scores of 0 never qualify. A score that ties 5th place
-        qualifies, and the newer score takes the spot.
-
-INPUT   score (number): a player's final score.
+INPUT   item: a question with q (text), choices (list of text) and
+        answer (the position of the correct choice).
         Returns true or false.
 
-CHANGE  Remove it. addToLeaderboard already reports which new entries
-        made the board, and that answer is more accurate. In a
-        two-player game this function judges each player against the
-        old board on its own, so both can "qualify" when only one spot
-        is left. One source of truth is safer.
-
-----------------------------------------------------------------------
-addToLeaderboard
-----------------------------------------------------------------------
-DOES    Adds a game's scores to the leaderboard, sorts it, keeps the
-        top 5, deletes the rest and saves it. Returns the ids of the new
-        entries that made it, so the results screen can tag them NEW.
-
-INPUT   entries (list): one item per player, each with a name (text),
-        score (number) and length ("short", "standard" or "long").
-        Returns a list of ids (text) for the entries that were kept.
-
-CHANGE  - Generate ids with crypto.randomUUID() instead of the current
-          time plus a counter.
-        - Save the real time in the date field. Today it adds a counter
-          to the time to break ties, which slightly distorts the
-          recorded date.
-        - Store which game length each score came from, and consider a
-          separate board for each length. A Long game can score about
-          twice what a Short game can, so one shared board isn't fair.
-
-----------------------------------------------------------------------
-renderLeaderboard
-----------------------------------------------------------------------
-DOES    Draws the leaderboard on the page: rank, name, game length,
-        date and score, with a NEW tag on entries just added. Shows
-        "No scores yet" when the list is empty.
-
-INPUT   listId (text): the id of the list element to draw into, either
-          "leaderboard-setup" or "leaderboard-results".
-        highlightIds (list of text, optional): ids of entries to tag
-          NEW. Defaults to an empty list.
-        Returns nothing.
-
-CHANGE  - Pass in the list element itself rather than its id, so it
-          can't fail on a typo.
-        - Build the rows with page elements instead of HTML strings
-          (see escapeHTML).
-        - Add a screen-reader announcement, such as "You placed 2nd",
-          when a NEW entry appears.
-
-----------------------------------------------------------------------
-readSettings
-----------------------------------------------------------------------
-DOES    Reads the setup screen: the number of players, the game length
-        and the player names. Blank names become "Player 1" or
-        "Player 2".
-
-INPUT   None. It reads the setup form directly.
-        Returns playerCount (1 or 2), length ("short", "standard" or
-        "long") and names (a list of 1 or 2 names).
-
-CHANGE  - Stop players giving themselves the same name, or add (P1)
-          and (P2) when names match, so the results stay clear.
-        - Return a safe default if no option is selected, instead of
-          crashing.
-        - Remember the last names and settings in storage, so
-          returning players don't retype them.
+CHANGE  Return the reason a question was rejected, such as "duplicate
+        choices", so the logs can say why live questions were skipped.
 
 ----------------------------------------------------------------------
 buildQueue
 ----------------------------------------------------------------------
-DOES    Builds the list of questions for one game. For each difficulty
-        it shuffles the question pool and gives each player their own
-        separate questions. It shuffles each question's answer choices
-        and records where the correct answer ended up. In two-player
-        games it alternates turns: P1, P2, P1, P2...
+DOES    Builds the list of questions for one game. It skips broken
+        questions, tops up a short difficulty from the backup
+        questions, and shortens the game evenly if there still aren't
+        enough. Each player gets their own questions, easy to hard. The
+        choices are shuffled by position, so the correct answer is
+        always tracked exactly. In two-player games, turns alternate.
 
-INPUT   playerCount (number): 1 or 2.
+INPUT   bank: easy, medium and hard lists of questions.
+        playerCount (number): 1 or 2.
         perDifficulty (number): questions per difficulty for each
-          player (2, 3 or 4, from the chosen game length).
-        Returns a list of questions in play order. Each one has
-        playerIndex, difficulty, q (question text), category, choices
-        and answer (the position of the correct choice).
+          player (2, 3 or 4).
+        options (optional): fallbackBank (backup questions) and random
+          (for tests).
+        Returns the queue (the questions in play order) and
+        perDifficulty (how many were actually used). Throws an error
+        only if it can't give every player at least one question per
+        difficulty.
 
-CHANGE  - Check there are enough questions before building. If a pool
-          has fewer than (playerCount x perDifficulty), shorten the
-          game or top it up. Today the list can end up with empty
-          slots, and the game crashes when it reaches one.
-        - Track the correct answer by its original position rather
-          than by matching its text after shuffling. Matching text
-          picks the wrong answer if two choices are identical.
+CHANGE  - Tell the player when the game was shortened, for example
+          "Only 2 questions per level were available."
         - Avoid repeating questions the player saw in recent games.
 
 ----------------------------------------------------------------------
-startGame
+timeRemaining
 ----------------------------------------------------------------------
-DOES    Starts a new game. It saves the settings, gives each player a
-        fresh score and stats, builds the question list, shows the quiz
-        screen and displays the first question.
+DOES    Works out the seconds left on a question from the real time
+        that has passed since it appeared, kept between 0 and the time
+        limit. This replaced counting timer ticks, which background
+        tabs could slow down.
 
-INPUT   settings (optional): the same shape readSettings returns
-        (playerCount, length, names). If left out, it reads the setup
-        form. Play Again passes the previous game's settings.
-        Returns nothing.
+INPUT   startedAtMs (number): when the question appeared.
+        nowMs (number): the current time, from the same clock.
+        limit (number, optional): defaults to TIME_LIMIT.
+        Returns the seconds left.
 
-CHANGE  Make it take no surprises from the browser. If it's ever
-        attached directly to a button without the current wrapper, the
-        browser passes the click event in as "settings" and the game
-        crashes. I'd make settings required and have the button
-        handler call startGame(readSettings()).
-
-----------------------------------------------------------------------
-renderScoreboard
-----------------------------------------------------------------------
-DOES    Draws each player's name and current score at the top of the
-        quiz, and outlines the player whose turn it is.
-
-INPUT   None. It reads the current game state.
-        Returns nothing.
-
-CHANGE  Build the score cards once at the start of the game, then only
-        update the numbers and the highlight. Today it rebuilds the
-        HTML on every update, which is wasteful and stops screen
-        readers from announcing just the change.
-
-----------------------------------------------------------------------
-renderQuestion
-----------------------------------------------------------------------
-DOES    Shows the current question: progress text and bar, difficulty
-        badge, whose turn it is (in two-player games), category,
-        question text and A-D answer buttons. It clears the last
-        feedback, hides Next and starts the timer.
-
-INPUT   None. It reads the current game state.
-        Returns nothing.
-
-CHANGE  - Split it into smaller pieces (progress, badge, turn banner,
-          answers). It does a lot of separate jobs today.
-        - Check that the current question exists, and show the results
-          instead of crashing if it doesn't.
-        - Show the answer letters from the number of choices, rather
-          than assuming exactly four.
-
-----------------------------------------------------------------------
-startTimer
-----------------------------------------------------------------------
-DOES    Starts the 15-second countdown for the current question. It
-        ticks every 0.1 seconds, updates the bar and treats reaching
-        zero as a timeout.
-
-INPUT   None. It resets the time left to the full limit.
-        Returns nothing.
-
-CHANGE  Measure real time instead of counting ticks. Record when the
-        question started and work out the time left from the clock on
-        each tick. Browsers slow down timers in background tabs, so
-        today a player can switch tabs to stretch the clock and keep a
-        bigger speed bonus. Animating the bar with
-        requestAnimationFrame would also make it smoother.
-
-----------------------------------------------------------------------
-stopTimer
-----------------------------------------------------------------------
-DOES    Stops the countdown.
-
-INPUT   None.
-        Returns nothing.
-
-CHANGE  Nothing. It's small and safe to call more than once.
-
-----------------------------------------------------------------------
-updateTimerBar
-----------------------------------------------------------------------
-DOES    Sets the timer bar's width to match the time left and colours
-        it: green above 50%, amber at 50% or less, red at 20% or less.
-
-INPUT   None. It reads the time left from the game state.
-        Returns nothing.
-
-CHANGE  - Look up the bar element once, not on every tick (10 times a
-          second).
-        - Add a small number countdown next to the bar for players who
-          can't tell the colours apart.
+CHANGE  Nothing needed.
 
 ----------------------------------------------------------------------
 calculatePoints
 ----------------------------------------------------------------------
-DOES    Works out the points for a correct answer: the base points for
-        the difficulty plus a speed bonus based on the time left (up to
-        +50% of the base).
+DOES    Works out the points for a correct answer: the difficulty's
+        base points plus a speed bonus of up to +50%. An unknown
+        difficulty scores 0 (not NaN), and the time left is kept in
+        range.
 
 INPUT   difficulty (text): "easy", "medium" or "hard".
-        timeLeft (number): seconds remaining, from 0 to 15.
-        Returns base, bonus and total (all whole numbers).
+        timeLeft (number): seconds left.
+        Returns base, bonus and total.
 
-CHANGE  - Use 0 points for an unknown difficulty, instead of producing
-          NaN ("not a number") and corrupting the player's score.
-        - Keep it free of side effects as it is now. It's the easiest
-          function in the app to unit test, and I'd add tests for it
-          first.
+CHANGE  Nothing needed. It's free of side effects and fully tested.
 
 ----------------------------------------------------------------------
-handleAnswer
+scoreAnswer
 ----------------------------------------------------------------------
-DOES    Handles one answer, or a timeout. It stops the timer, disables
-        the buttons, colours the correct answer green and a wrong pick
-        red, updates the player's score and accuracy by difficulty,
-        shows "Correct!", "Wrong!" or "Time's up!", and reveals the
-        Next button. A second call for the same question is ignored.
+DOES    Scores one answer: whether it was correct, whether it timed
+        out, and the points earned. An answer that arrives after time
+        ran out counts as a timeout.
 
-INPUT   choiceIndex (number or nothing): 0-3 for answers A-D, or null
-        when time runs out.
-        Returns nothing.
+INPUT   item: the question (needs answer and difficulty).
+        choiceIndex (number or nothing): 0-3, or null for a timeout.
+        timeLeft (number): seconds left when the answer arrived.
+        Returns isCorrect, timedOut, base, bonus and total.
 
-CHANGE  - Split the scoring (updating the game state) from the display
-          (colouring buttons and showing messages). Scoring could then
-          be tested without a browser.
-        - Give the feedback a short delay or animation before showing
-          Next, so fast tappers don't skip past seeing the answer.
+CHANGE  Nothing needed.
 
 ----------------------------------------------------------------------
-isGameOver
+createPlayer
 ----------------------------------------------------------------------
-DOES    Returns true once every question in the game has been played.
+DOES    Creates a player with a zero score and empty stats for each
+        difficulty.
 
-INPUT   None. It reads the game state.
+INPUT   name (text).
+        Returns the new player.
+
+CHANGE  Nothing needed.
+
+----------------------------------------------------------------------
+applyAnswer
+----------------------------------------------------------------------
+DOES    Returns an updated copy of a player after one answer: new
+        score, correct count and per-difficulty stats. The original
+        player isn't changed.
+
+INPUT   player: a player made by createPlayer.
+        difficulty (text): the question's difficulty.
+        outcome: the result from scoreAnswer.
+        Returns the updated player.
+
+CHANGE  Nothing needed.
+
+----------------------------------------------------------------------
+accuracy
+----------------------------------------------------------------------
+DOES    Returns the percentage of answered questions a player got right
+        (0 if they answered none).
+
+INPUT   player.
+        Returns a whole number from 0 to 100.
+
+CHANGE  Nothing needed.
+
+----------------------------------------------------------------------
+decideResult
+----------------------------------------------------------------------
+DOES    Picks the results title and the winner(s). For one player:
+        "New High Score!", "You Made the Leaderboard!" or "Quiz
+        Complete!". For two or more: "<name> Wins!" or "It's a Tie!".
+
+INPUT   players (list).
+        options: prevTopScore (the leaderboard's top score before this
+          game) and madeBoard (whether a score made the Top 5).
+        Returns title (text) and winners (list of player positions).
+
+CHANGE  Name the tied players in the title ("Ann and Bo tie!") if the
+        game ever allows more than two players.
+
+----------------------------------------------------------------------
+isValidEntry
+----------------------------------------------------------------------
+DOES    Checks a saved leaderboard entry has a text id and name, a
+        positive score and a date.
+
+INPUT   e: one saved entry.
         Returns true or false.
 
-CHANGE  Nothing. It's clear and correct.
+CHANGE  Nothing needed.
 
 ----------------------------------------------------------------------
-nextQuestion
+sortBoard
 ----------------------------------------------------------------------
-DOES    Moves to the next question, or to the results screen after the
-        last question.
+DOES    Returns a sorted copy of the leaderboard: highest score first,
+        and on a tie the more recent score ranks higher.
 
-INPUT   None.
-        Returns nothing.
+INPUT   board (list of entries).
+        Returns a new sorted list; the original isn't changed.
 
-CHANGE  Do nothing unless the current question has been answered.
-        Today any future code path that calls it early (a new shortcut
-        or a swipe gesture) could skip questions.
+CHANGE  Nothing needed. The earlier suggestion (return a copy) is done.
 
 ----------------------------------------------------------------------
-showResults
+mergeLeaderboard
 ----------------------------------------------------------------------
-DOES    Ends the game. It saves the scores to the leaderboard, picks a
-        title ("New High Score!", "You Made the Leaderboard!",
-        "<name> Wins!" or "It's a Tie!") and shows a card for each
-        player with their score, accuracy and correct answers per
-        difficulty. Then it draws the updated leaderboard and shows
-        the results screen.
+DOES    Adds a game's scores to the leaderboard. It ignores zero
+        scores, drops damaged old entries, keeps the top 5, and reports
+        which new entries made it. New entries get a unique id and the
+        real time as their date.
 
-INPUT   None. It reads the finished game state.
-        Returns nothing.
+INPUT   board (list): the current entries.
+        entries (list): one per player, with name, score and length.
+        options (optional): now, idFn and size, so tests can control
+          the time, the ids and the board size.
+        Returns board (the new top 5) and newIds (ids of new entries
+        that made it).
 
-CHANGE  - Show the results first, then save, so a storage error can't
-          stop the results screen appearing.
-        - Work out the winner from the highest score, rather than
-          comparing exactly two players. That would support more
-          players.
-        - Use addToLeaderboard's result to decide the title, and drop
-          qualifiesForLeaderboard.
-
-----------------------------------------------------------------------
-formatMinutes
-----------------------------------------------------------------------
-DOES    Turns a length of time in milliseconds into friendly text such
-        as "12 min" or "less than a minute".
-
-INPUT   ms (number): a length of time in milliseconds. Negative values
-        are treated as 0.
-        Returns the text.
-
-CHANGE  Use the browser's built-in Intl.RelativeTimeFormat, which gives
-        correctly translated phrases like "in 5 minutes" and "2 hours
-        ago", and handles hours as well as minutes.
-
-----------------------------------------------------------------------
-renderQuestionStatus
-----------------------------------------------------------------------
-DOES    Updates the status line on the setup screen: fetching, live
-        (with when it was updated and when the next set is due),
-        offline, failed, or built-in. It disables "Get new questions
-        now" while a fetch is running.
-
-INPUT   None. It reads questionSource, the live-question status kept in
-        trivia-api.js.
-        Returns nothing.
-
-CHANGE  - Accept the status as an input. It's already passed in by the
-          change notification but is ignored, and the function reads
-          the shared status directly instead.
-        - Say when a fetch has been running unusually long, such as
-          "Still trying...", because a stuck request currently leaves
-          it saying "Fetching" forever.
-
-======================================================================
-BUTTON AND KEYBOARD HANDLERS (script.js)
-======================================================================
-These short functions connect the page to the game. In the code they
-are unnamed (anonymous) functions attached with addEventListener, so
-each one is labelled below by the element it listens to and the event
-that triggers it. Most are in the Events section; the "Get new
-questions now" handler is in the Question source status section, and
-the answer-button handler is created inside renderQuestion.
-
-Every handler receives the browser's event object for its action (a
-click, change or key press). Most of them ignore it.
-
-----------------------------------------------------------------------
-HANDLER: Player count options (change)
-----------------------------------------------------------------------
-LISTENS TO  The "1 Player" and "2 Players" options on the setup screen
-            (the inputs named "players").
-
-DOES    Shows the Player 2 name box when "2 Players" is selected and
-        hides it for "1 Player".
-
-INPUT   A change event. It ignores the event and calls readSettings to
-        find the current player count.
-
-CHANGE  Read the selected option directly from the event
-        (event.target.value) instead of re-reading the whole form with
-        readSettings, which also reads the names and length it doesn't
-        need.
-
-----------------------------------------------------------------------
-HANDLER: Start Game button (click)
-----------------------------------------------------------------------
-LISTENS TO  The Start Game button (id "start-btn").
-
-DOES    Starts a new game using the setup form by calling startGame
-        with nothing passed in.
-
-INPUT   A click event, deliberately not passed on to startGame. The
-        wrapper exists so the event isn't mistaken for game settings.
-
-CHANGE  Call startGame(readSettings()) explicitly, so the reason for
-        the wrapper is visible in the code (see startGame).
-
-----------------------------------------------------------------------
-HANDLER: Player name boxes (keydown)
-----------------------------------------------------------------------
-LISTENS TO  The Player 1 and Player 2 name boxes (ids "p1-name" and
-            "p2-name").
-
-DOES    When Enter (or "done" on a phone keyboard) is pressed, takes
-        focus away from the box, which closes the phone keyboard.
-
-INPUT   A keydown event. It checks event.key for "Enter".
-
-CHANGE  Wrap the setup controls in a form and handle its submit, so
-        Enter in a name box also starts the game. That's what most
-        people expect from a form, and it works the same on every
-        device.
-
-----------------------------------------------------------------------
-HANDLER: Answer buttons A-D (click)
-----------------------------------------------------------------------
-LISTENS TO  Each answer button. A new handler is created for every
-            button each time renderQuestion draws a question.
-
-DOES    Calls handleAnswer with that button's position (0 for A,
-        1 for B, and so on).
-
-INPUT   A click event, which it ignores. The button's position is
-        remembered from when the button was created.
-
-CHANGE  Use one click handler on the answers container that reads the
-        position from a data attribute on the clicked button. That
-        creates one handler for the whole game instead of four new ones
-        per question.
-
-----------------------------------------------------------------------
-HANDLER: Next button (click)
-----------------------------------------------------------------------
-LISTENS TO  The Next / See Results button (id "next-btn").
-
-DOES    Calls nextQuestion, which shows the next question or, after the
-        last one, the results screen.
-
-INPUT   A click event, which nextQuestion receives but ignores.
-
-CHANGE  Wrap it so nextQuestion isn't handed the event, and have it do
-        nothing until the current question is answered (see
-        nextQuestion).
-
-----------------------------------------------------------------------
-HANDLER: Play Again button (click)
-----------------------------------------------------------------------
-LISTENS TO  The Play Again button on the results screen (id
-            "replay-btn").
-
-DOES    Starts a new game with the same players and game length as the
-        last one, by passing the saved settings to startGame. The
-        questions are reshuffled.
-
-INPUT   A click event, which it ignores.
-
-CHANGE  Nothing needed. If a newer question set arrived during the last
-        game, Play Again already uses it, because buildQueue reads the
-        current questions each time.
-
-----------------------------------------------------------------------
-HANDLER: Main Menu button (click)
-----------------------------------------------------------------------
-LISTENS TO  The Main Menu button on the results screen (id
-            "menu-btn").
-
-DOES    Redraws the setup screen's leaderboard so it includes the game
-        just played, then shows the setup screen.
-
-INPUT   A click event, which it ignores.
-
-CHANGE  Have the leaderboard redraw itself whenever scores are saved,
-        so every screen showing it stays current without each button
-        remembering to refresh it.
-
-----------------------------------------------------------------------
-HANDLER: Clear leaderboard link (click)
-----------------------------------------------------------------------
-LISTENS TO  The "Clear leaderboard" link on the setup screen (id
-            "clear-lb-btn").
-
-DOES    Asks "Clear all leaderboard scores?" in a browser pop-up. If
-        the player confirms, it deletes the saved scores and redraws
-        the empty leaderboard.
-
-INPUT   A click event, which it ignores.
-
-CHANGE  Replace the browser's confirm() pop-up with a confirmation
-        inside the page. Some in-app browsers block confirm(), so the
-        link silently does nothing there. Deleting the scores should
-        also go through the same safe storage helper as everything else.
-
-----------------------------------------------------------------------
-HANDLER: Keyboard shortcuts (keydown on the whole page)
-----------------------------------------------------------------------
-LISTENS TO  Every key press on the page.
-
-DOES    While the quiz screen is showing and the question hasn't been
-        answered, A, B, C, D or 1, 2, 3, 4 answers the question. Other
-        keys, other screens and already-answered questions are ignored.
-        (Enter for Next works on its own, because the Next button has
-        focus after answering.)
-
-INPUT   A keydown event. It reads event.key and ignores capital
-        letters by lower-casing the key.
-
-CHANGE  - Ignore key presses with Ctrl, Alt or Cmd held, so browser
-          shortcuts like Ctrl+1 don't also answer the question.
-        - Ignore key presses that repeat when a key is held down.
-        - Show the shortcuts on screen for keyboard users.
-
-----------------------------------------------------------------------
-HANDLER: Get new questions now button (click)
-----------------------------------------------------------------------
-LISTENS TO  The "Get new questions now" button on the setup screen (id
-            "refresh-questions-btn").
-
-DOES    Starts fetching a fresh set of questions from the Open Trivia
-        DB straight away, by calling refreshQuestions. The button is
-        disabled while a fetch is running.
-
-INPUT   A click event, which it ignores.
-
-CHANGE  Add a cool-down of a minute or so after each press, because
-        repeated presses run into the API's rate limit and end up
-        showing a failure message.
+CHANGE  Keep a separate board for each game length. A Long game can
+        score about twice what a Short game can, so one shared board
+        isn't fair.
 
 
 ######################################################################
@@ -619,208 +287,690 @@ FILE: trivia-api.js
 ----------------------------------------------------------------------
 wait
 ----------------------------------------------------------------------
-DOES    Pauses for a given time, used to space out requests to the
-        API. It returns a promise, the JavaScript way of representing
-        something that finishes later.
+DOES    Pauses for a given time, to space out API requests.
 
-INPUT   ms (number): how long to wait, in milliseconds.
+INPUT   ms (number): milliseconds to wait.
         Returns a promise that finishes after that time.
 
-CHANGE  Nothing. It's a standard helper.
+CHANGE  Nothing needed.
 
 ----------------------------------------------------------------------
 notifyQuestionListeners
 ----------------------------------------------------------------------
-DOES    Calls every function that asked to hear about changes to the
-        live questions, passing each one the current status.
+DOES    Calls every registered function with the current question
+        status. Each runs separately, so one failing can't stop the
+        rest.
 
 INPUT   None.
         Returns nothing.
 
-CHANGE  Call each listener inside its own try/catch. Today, if one
-        listener throws an error, the rest are skipped, and the error
-        escapes from refreshQuestions as an unhandled error.
+CHANGE  Nothing needed. The earlier suggestion (isolate each listener)
+        is done.
 
 ----------------------------------------------------------------------
 onQuestionSourceChange
 ----------------------------------------------------------------------
-DOES    Registers a function to be called whenever the live-question
-        status changes.
+DOES    Registers a function to call when the question status changes.
+        Registering the same function twice has no effect.
 
-INPUT   fn (function): called with the questionSource status object.
+INPUT   fn (function): called with the status object.
         Returns nothing.
 
-CHANGE  Return a way to unregister the function, and ignore duplicate
-        registrations. Today the same function can be added twice and
-        will then run twice.
+CHANGE  Return a way to unregister the function.
 
 ----------------------------------------------------------------------
 getActiveBank
 ----------------------------------------------------------------------
-DOES    Returns the questions the next game should use. If live
-        questions are loaded, it uses them, topping up any difficulty
-        that has fewer than 8 with built-in questions. Otherwise it
-        uses the built-in questions from questions.js.
+DOES    Returns the questions the next game should use: the live list
+        for each difficulty that has one, otherwise the built-in list.
+        buildQueue tops up any difficulty that's still short.
 
-INPUT   None. It reads the live status and QUESTION_BANK.
-        Returns easy, medium and hard lists of questions. Each question
-        has q, choices, answer and, for live questions, category.
+INPUT   None.
+        Returns easy, medium and hard lists of questions.
 
-CHANGE  - Top up with random built-in questions, not always the first
-          few, so the same backup questions don't keep repeating.
-        - Base the minimum on the longest game, worked out from the
-          game-length settings, rather than a separate fixed number
-          (8) that can drift out of sync with them.
+CHANGE  Nothing needed. Topping up now happens in one place
+        (buildQueue), with random backup questions rather than always
+        the first few.
 
 ----------------------------------------------------------------------
 loadQuestionCache
 ----------------------------------------------------------------------
-DOES    Loads previously fetched questions from storage when the page
-        opens, so live questions are ready straight away. It sets when
-        the next refresh is due and deletes the cache if it's
-        corrupted.
+DOES    Loads saved questions when the page opens, or when another tab
+        saves new ones. It ignores and deletes caches that are
+        corrupted, from an older version, dated in the future, or have
+        no playable questions.
 
 INPUT   None. It reads storage.
-        Returns nothing. It updates the live-question status directly.
+        Returns true if usable questions were loaded.
 
-CHANGE  - Add a version number to the saved cache, and throw away
-          caches from older versions with a different format.
-        - Check that each difficulty is a list of properly formed
-          questions before using them.
-        - Treat a fetch time in the future (from a changed device
-          clock) as stale, so refreshes can't be blocked for a long
-          time.
+CHANGE  Nothing needed. The earlier suggestions (cache version number,
+        checking each question, treating future dates as stale) are
+        done.
 
 ----------------------------------------------------------------------
 saveQuestionCache
 ----------------------------------------------------------------------
-DOES    Saves the current live questions and the time they were fetched
-        to storage.
+DOES    Saves the live questions, when they were fetched, and whether
+        the fetch was partial. If storage is full or blocked it only
+        logs a warning, because the questions are already in use.
 
-INPUT   None. It reads the live-question status.
-        Returns nothing.
+INPUT   None.
+        Returns true if saved.
 
-CHANGE  Catch its own errors. Today, if storage is full or blocked,
-        the error is caught by refreshQuestions and wrongly reported as
-        a failed download, even though the new questions are already
-        in use. That also causes needless retries every 5 minutes.
+CHANGE  Nothing needed. A failed save is no longer reported as a failed
+        refresh.
 
 ----------------------------------------------------------------------
 normalizeApiQuestion
 ----------------------------------------------------------------------
-DOES    Converts one question from the Open Trivia DB into the game's
-        format: q (the question), choices (the correct answer first,
-        then the wrong ones), answer (always 0, because buildQueue
-        shuffles the choices later) and category. It decodes the API's
-        URL-encoded text and shortens category names such as
-        "Entertainment: Film" to "Film".
+DOES    Converts one question from the API into the game's format:
+        q, choices (the correct one first), answer (always 0, because
+        buildQueue shuffles) and category. It decodes the API's
+        URL-encoded text and shortens names like "Entertainment: Film"
+        to "Film". Returns nothing for a question that can't be decoded
+        or isn't playable.
 
-INPUT   item: one question as the API sends it, with question,
-        correct_answer, incorrect_answers (a list) and category, all
-        URL-encoded. The API also sends type and difficulty, which this
-        function ignores.
-        Returns the question in the game's format.
+INPUT   item: one API question with question, correct_answer,
+        incorrect_answers and category, all URL-encoded.
+        Returns the converted question, or null.
 
-CHANGE  - Wrap the decoding in try/catch and skip a single bad question,
-          instead of letting one bad question fail the whole
-          difficulty.
-        - Drop questions with duplicate choices or more or fewer than 4
-          choices, so buildQueue always gets clean data.
+CHANGE  Count the questions it skips and report the count in the
+        logs.
+
+----------------------------------------------------------------------
+fetchJsonWithTimeout
+----------------------------------------------------------------------
+DOES    Fetches a web address and reads the reply, cancelling if it
+        takes longer than the timeout. The timeout covers reading the
+        reply as well as waiting for it.
+
+INPUT   url (text): the address to fetch.
+        ms (number): the timeout in milliseconds.
+        Returns a promise of ok (true or false), status (the HTTP
+        code) and data (the parsed reply, or null).
+
+CHANGE  Nothing needed.
 
 ----------------------------------------------------------------------
 fetchDifficulty
 ----------------------------------------------------------------------
-DOES    Requests 20 multiple-choice questions of one difficulty from
-        the Open Trivia DB. If the API reports a rate limit (response
-        code 5 or HTTP 429), it waits 5.5 seconds and tries again, up
-        to 3 attempts in total. Any other problem is raised as an error
-        for refreshQuestions to handle.
+DOES    Fetches 20 multiple-choice questions of one difficulty. When
+        rate-limited, it waits (5.5 seconds, then 11) and retries, up
+        to 3 attempts in total. A timeout or other error fails that
+        difficulty.
 
 INPUT   difficulty (text): "easy", "medium" or "hard".
-        attempt (number, optional): used internally when retrying;
-          starts at 1.
-        Returns a promise of a list of questions in the game's format.
+        attempt (number, optional): used internally for retries.
+        Returns a promise of a list of questions.
 
-CHANGE  - Add a timeout (about 10 seconds) that cancels the request.
-          Today a request that never answers leaves the app stuck in
-          "Fetching" for good, with the refresh button disabled.
-        - Wait a little longer after each failed attempt, rather than
-          the same 5.5 seconds every time.
-        - Use the API's session token feature, so new sets don't repeat
-          questions the player has already seen.
+CHANGE  Use the API's session tokens so new sets don't repeat
+        questions the player has already seen.
+
+----------------------------------------------------------------------
+fetchAllDifficulties
+----------------------------------------------------------------------
+DOES    Fetches easy, medium and hard in turn, 5.5 seconds apart. A
+        failure on one doesn't stop the others.
+
+INPUT   None.
+        Returns a promise of fetched (the questions that arrived, by
+        difficulty) and failed (the difficulties that didn't).
+
+CHANGE  Nothing needed.
+
+----------------------------------------------------------------------
+withRefreshLock
+----------------------------------------------------------------------
+DOES    Uses the browser's Web Locks API so only one tab fetches at a
+        time. It runs the fetch without a lock in browsers without Web
+        Locks, on pages opened from disk (where Chrome's lock request
+        never answers), or if the lock request throws.
+
+INPUT   task (function): the work to do while holding the lock.
+        Returns a promise of true if the task ran, or false if another
+        tab already holds the lock.
+
+CHANGE  Coordinate across devices too, through a small shared server
+        cache of questions. That's the only way to stop players on one
+        network from sharing the API's rate limit.
 
 ----------------------------------------------------------------------
 refreshQuestions
 ----------------------------------------------------------------------
-DOES    Fetches new easy, medium and hard sets, one at a time, 5.5
-        seconds apart, to respect the API's rate limit. On success it
-        switches to the new questions, saves them and schedules the
-        next refresh for 30 minutes later. If the device is offline or
-        the fetch fails, it keeps the current questions and tries again
-        in 5 minutes. It updates the status line before and after.
+DOES    Fetches a fresh set of questions and makes it the active set.
+        Only one tab fetches at a time. Unless forced, it first uses
+        another tab's fresh questions if there are any. It keeps any
+        difficulties that succeed, and retries in 5 minutes after a
+        failure or partial result. If another tab is fetching, it waits
+        a minute.
 
-INPUT   None.
-        Returns a promise that finishes when the refresh is done. It
-        never fails outright, because it handles its own errors.
+INPUT   options (optional): force (true or false). The "Get new
+        questions now" button passes true to skip the freshness check.
+        Returns a promise that finishes when done. It handles its own
+        errors.
 
-CHANGE  - Keep each difficulty that succeeds. Today one failed
-          difficulty throws away the other two new sets.
-        - Coordinate between open tabs, so only one tab fetches and the
-          others use its results. Today several tabs can fetch at once
-          and hit the API's rate limit, which happened during testing.
-        - Allow a fetch only every few seconds from the "Get new
-          questions now" button.
+CHANGE  - Add a cool-down of a minute or so after a forced refresh, so
+          repeated button presses can't hit the rate limit.
+        - Record a fetch time for each difficulty, so the status line
+          is accurate after a partial refresh.
 
 ----------------------------------------------------------------------
 checkQuestionRefresh
 ----------------------------------------------------------------------
-DOES    Starts a refresh if one is due and none is running.
-
-INPUT   None.
-        Returns nothing. It starts the refresh but doesn't wait for it.
-
-CHANGE  Nothing major. Once fetchDifficulty has a timeout, this will
-        recover from stuck fetches on its own.
-
-----------------------------------------------------------------------
-startQuestionAutoRefresh
-----------------------------------------------------------------------
-DOES    Runs once when the page loads. It loads cached questions and
-        fetches new ones if the cache is missing or more than 30
-        minutes old. After that it checks every minute, whenever the
-        tab becomes visible again, and whenever the device reconnects
-        to the internet.
+DOES    Starts a refresh if one is due and this tab isn't already
+        fetching.
 
 INPUT   None.
         Returns nothing.
 
-CHANGE  - Make it safe to call twice; today a second call doubles all
-          the checks.
-        - Return a stop function that removes the timer and listeners.
-        - Have it accept the status-line listener directly, so the
-          order of setup in script.js can't be got wrong.
+CHANGE  Nothing needed.
+
+----------------------------------------------------------------------
+handleStorageEvent
+----------------------------------------------------------------------
+DOES    When another tab saves new questions to storage, loads them
+        into this tab too.
+
+INPUT   event: the browser's storage event (it reads event.key).
+        Returns nothing.
+
+CHANGE  Use a BroadcastChannel as well, so tabs can still share
+        questions when storage is blocked and the storage event never
+        fires.
+
+----------------------------------------------------------------------
+startQuestionAutoRefresh
+----------------------------------------------------------------------
+DOES    Runs on page load. It registers the status listener first, then
+        loads cached questions and fetches if needed. After that it
+        checks every minute, when the tab becomes visible, when the
+        device reconnects, and when another tab saves questions.
+        Calling it again only adds the listener.
+
+INPUT   onChange (function, optional): the listener to register first.
+        Returns nothing.
+
+CHANGE  Return a stop function that removes the timer and listeners.
 
 
 ######################################################################
-SUMMARY: CHANGES I'D MAKE FIRST
+FILE: script.js
 ######################################################################
 
-1. Make all storage reads and writes safe. One helper that catches
-   errors would fix the game not starting, results not appearing, and
-   false "refresh failed" messages when storage is blocked or full.
+----------------------------------------------------------------------
+$
+----------------------------------------------------------------------
+DOES    Finds a page element by its id.
 
-2. Add a timeout to fetchDifficulty, so a stuck network request can't
-   freeze the live-question refresh.
+INPUT   id (text).
+        Returns the element, or null if none has that id.
 
-3. Base the timer on real time, not ticks, so switching tabs can't
-   slow the clock to gain a bigger speed bonus.
+CHANGE  Raise a clear error naming the missing id, so a typo is easy
+        to find.
 
-4. Check the number of questions in buildQueue, so a short question
-   pool can never crash a game partway through.
+----------------------------------------------------------------------
+showScreen
+----------------------------------------------------------------------
+DOES    Hides all screens, shows the requested one and scrolls to the
+        top.
 
-5. Keep partial refresh results, and coordinate between tabs, to cut
-   down rate-limit failures.
+INPUT   name (text): "setup", "quiz" or "results".
+        Returns nothing.
 
-6. Separate the scoring logic from the page display (handleAnswer,
-   showResults), and add unit tests for calculatePoints, sortBoard,
-   addToLeaderboard and buildQueue.
+CHANGE  Move keyboard focus to the new screen's heading, so screen
+        reader and keyboard users know the screen changed.
+
+----------------------------------------------------------------------
+escapeHTML
+----------------------------------------------------------------------
+DOES    Turns text into HTML-safe text, so names and answers can't add
+        their own HTML to the page.
+
+INPUT   str (text).
+        Returns the escaped text.
+
+CHANGE  Build the leaderboard, scoreboard and results with page
+        elements and textContent instead of HTML strings. Then no
+        escaping is needed.
+
+----------------------------------------------------------------------
+showSetupError
+----------------------------------------------------------------------
+DOES    Shows a message on the setup screen, or hides it when the
+        message is empty. Used when a game can't be built.
+
+INPUT   message (text).
+        Returns nothing.
+
+CHANGE  Nothing needed.
+
+----------------------------------------------------------------------
+getLeaderboard
+----------------------------------------------------------------------
+DOES    Reads the leaderboard through safeStorage, drops damaged
+        entries, and returns it sorted best first.
+
+INPUT   None.
+        Returns a list of entries.
+
+CHANGE  Nothing needed. The earlier suggestion (check each entry) is
+        done.
+
+----------------------------------------------------------------------
+addToLeaderboard
+----------------------------------------------------------------------
+DOES    Adds a game's scores with mergeLeaderboard and saves the result
+        through safeStorage.
+
+INPUT   entries (list): one per player, with name, score and length.
+        Returns board (the new top 5), newIds (entries that made it)
+        and saved (false if the scores couldn't be saved permanently).
+
+CHANGE  Nothing needed. A failed save no longer stops the results
+        screen.
+
+----------------------------------------------------------------------
+renderLeaderboard
+----------------------------------------------------------------------
+DOES    Draws the leaderboard: rank, name, game length, date and score,
+        with a NEW tag on entries just added. It shows "No scores yet"
+        when empty.
+
+INPUT   listId (text): "leaderboard-setup" or "leaderboard-results".
+        highlightIds (list, optional): ids to tag NEW.
+        board (list, optional): the entries to draw. Defaults to the
+          saved leaderboard.
+        Returns nothing.
+
+CHANGE  Announce a new placing to screen readers, such as "You placed
+        2nd".
+
+----------------------------------------------------------------------
+renderStorageNote
+----------------------------------------------------------------------
+DOES    Shows a note under the setup leaderboard when the browser won't
+        let the game save anything.
+
+INPUT   None.
+        Returns nothing.
+
+CHANGE  Also show it after a save fails because storage is full (see
+        createSafeStorage).
+
+----------------------------------------------------------------------
+readSettings
+----------------------------------------------------------------------
+DOES    Reads the setup screen: number of players, game length and
+        names. Blank names become "Player 1" and "Player 2".
+
+INPUT   None.
+        Returns playerCount, length and names.
+
+CHANGE  - Stop players giving themselves the same name.
+        - Remember the last names and settings for returning players.
+
+----------------------------------------------------------------------
+startGame
+----------------------------------------------------------------------
+DOES    Starts a new game. It builds the question list with buildQueue
+        (topping up or shortening as needed), creates the players, and
+        shows the first question. If no game can be built, it returns to
+        setup with an error message.
+
+INPUT   settings (optional): playerCount, length and names. If left
+        out, it reads the setup form. Play Again passes the last
+        game's settings.
+        Returns nothing.
+
+CHANGE  Make settings required, and have the Start button call
+        startGame(readSettings()), so the click event can never be
+        mistaken for settings.
+
+----------------------------------------------------------------------
+renderScoreboard
+----------------------------------------------------------------------
+DOES    Draws each player's name and score and outlines whose turn it
+        is.
+
+INPUT   None.
+        Returns nothing.
+
+CHANGE  Build the score cards once per game and only update the numbers
+        afterwards.
+
+----------------------------------------------------------------------
+renderQuestion
+----------------------------------------------------------------------
+DOES    Shows the current question: progress, difficulty badge, whose
+        turn it is, category, question and A-D buttons. It clears the
+        last feedback and starts the timer.
+
+INPUT   None.
+        Returns nothing.
+
+CHANGE  Split it into smaller pieces (progress, badge, turn banner,
+        answers).
+
+----------------------------------------------------------------------
+getTimeLeft
+----------------------------------------------------------------------
+DOES    Returns the seconds left on the current question, using
+        timeRemaining and the real clock.
+
+INPUT   None.
+        Returns the seconds left.
+
+CHANGE  Nothing needed.
+
+----------------------------------------------------------------------
+startTimer
+----------------------------------------------------------------------
+DOES    Records when the question appeared and starts updating the
+        timer display every 0.1 seconds.
+
+INPUT   None.
+        Returns nothing.
+
+CHANGE  Animate the bar with requestAnimationFrame for smoother
+        movement. The timing itself is already correct.
+
+----------------------------------------------------------------------
+tickTimer
+----------------------------------------------------------------------
+DOES    One timer update: redraws the bar from the real time left, and
+        treats the question as timed out when it reaches zero.
+
+INPUT   None.
+        Returns nothing.
+
+CHANGE  Nothing needed.
+
+----------------------------------------------------------------------
+stopTimer
+----------------------------------------------------------------------
+DOES    Stops the timer display.
+
+INPUT   None.
+        Returns nothing.
+
+CHANGE  Nothing needed.
+
+----------------------------------------------------------------------
+updateTimerBar
+----------------------------------------------------------------------
+DOES    Sets the timer bar's width and colour for the time left: green
+        above 50%, amber at 50% or less, red at 20% or less.
+
+INPUT   timeLeft (number): seconds left.
+        Returns nothing.
+
+CHANGE  Look up the bar once instead of on every update, and show a
+        number countdown for players who can't tell the colours apart.
+
+----------------------------------------------------------------------
+handleAnswer
+----------------------------------------------------------------------
+DOES    Handles an answer or a timeout. It stops the timer, scores the
+        answer with scoreAnswer and applyAnswer (game-logic.js), and
+        hands off to showAnswerFeedback. A second call for the same
+        question is ignored.
+
+INPUT   choiceIndex (number or nothing): 0-3 for A-D, or null when
+        time runs out.
+        Returns nothing.
+
+CHANGE  Nothing needed. The earlier suggestion (separate scoring from
+        display) is done.
+
+----------------------------------------------------------------------
+showAnswerFeedback
+----------------------------------------------------------------------
+DOES    Display only: locks the buttons, colours the correct answer
+        green and a wrong pick red, shows the message, updates the
+        scoreboard and reveals Next (or See Results).
+
+INPUT   item: the question.
+        choiceIndex (number or nothing): what the player picked.
+        outcome: the result from scoreAnswer.
+        Returns nothing.
+
+CHANGE  Pause briefly before showing Next, so fast tappers see the
+        answer before moving on.
+
+----------------------------------------------------------------------
+isGameOver
+----------------------------------------------------------------------
+DOES    Returns true once every question has been played.
+
+INPUT   None.
+        Returns true or false.
+
+CHANGE  Nothing needed.
+
+----------------------------------------------------------------------
+nextQuestion
+----------------------------------------------------------------------
+DOES    Moves to the next question, or to the results after the last
+        one.
+
+INPUT   None. (The Next button passes its click event, which is
+        ignored.)
+        Returns nothing.
+
+CHANGE  Do nothing unless the current question has been answered.
+
+----------------------------------------------------------------------
+showResults
+----------------------------------------------------------------------
+DOES    Ends the game. It saves the scores, picks the title with
+        decideResult, shows each player's score, accuracy and results
+        by difficulty, and draws the leaderboard. Results always
+        appear; a note explains if scores couldn't be saved.
+
+INPUT   None. It reads the finished game.
+        Returns nothing.
+
+CHANGE  Nothing needed. The earlier suggestions (results first, any
+        number of players, one source of truth for the title) are done.
+
+----------------------------------------------------------------------
+formatMinutes
+----------------------------------------------------------------------
+DOES    Turns a length of time into text like "12 min" or "less than a
+        minute".
+
+INPUT   ms (number): milliseconds.
+        Returns the text.
+
+CHANGE  Use the browser's Intl.RelativeTimeFormat for properly
+        translated phrases that also handle hours.
+
+----------------------------------------------------------------------
+renderQuestionStatus
+----------------------------------------------------------------------
+DOES    Updates the status line: fetching, live (fully or partly
+        updated), offline, failed or built-in. It disables "Get new
+        questions now" while this tab is fetching.
+
+INPUT   None. It reads questionSource directly.
+        Returns nothing.
+
+CHANGE  Use the status object it's given, and say when another tab is
+        doing the fetching.
+
+
+======================================================================
+BUTTON AND KEYBOARD HANDLERS (script.js)
+======================================================================
+These short functions connect the page to the game. In the code they
+are unnamed functions attached with addEventListener, so each one is
+labelled below by the element it listens to and the event that
+triggers it. Every handler receives the browser's event for its action
+(a click, change or key press); most of them ignore it.
+
+----------------------------------------------------------------------
+HANDLER: Player count options (change)
+----------------------------------------------------------------------
+LISTENS TO  The "1 Player" and "2 Players" options on the setup screen.
+
+DOES    Shows the Player 2 name box for "2 Players" and hides it for
+        "1 Player".
+
+INPUT   A change event. It ignores the event and calls readSettings.
+
+CHANGE  Read the choice from the event (event.target.value) instead of
+        re-reading the whole form.
+
+----------------------------------------------------------------------
+HANDLER: Start Game button (click)
+----------------------------------------------------------------------
+LISTENS TO  The Start Game button (id "start-btn").
+
+DOES    Starts a new game from the setup form by calling startGame.
+
+INPUT   A click event, deliberately not passed to startGame.
+
+CHANGE  Call startGame(readSettings()) explicitly (see startGame).
+
+----------------------------------------------------------------------
+HANDLER: Player name boxes (keydown)
+----------------------------------------------------------------------
+LISTENS TO  The Player 1 and Player 2 name boxes.
+
+DOES    When Enter (or "done" on a phone) is pressed, closes the phone
+        keyboard.
+
+INPUT   A keydown event. It checks event.key for "Enter".
+
+CHANGE  Wrap the setup controls in a form, so Enter also starts the
+        game.
+
+----------------------------------------------------------------------
+HANDLER: Answer buttons A-D (click)
+----------------------------------------------------------------------
+LISTENS TO  Each answer button. A new handler is created for every
+            button each time renderQuestion draws a question.
+
+DOES    Calls handleAnswer with that button's position (0 for A, 1 for
+        B, and so on).
+
+INPUT   A click event, which it ignores.
+
+CHANGE  Use one click handler on the answers container instead of four
+        new ones per question.
+
+----------------------------------------------------------------------
+HANDLER: Next button (click)
+----------------------------------------------------------------------
+LISTENS TO  The Next / See Results button (id "next-btn").
+
+DOES    Calls nextQuestion.
+
+INPUT   A click event, which nextQuestion receives and ignores.
+
+CHANGE  Wrap it so nextQuestion isn't handed the event.
+
+----------------------------------------------------------------------
+HANDLER: Play Again button (click)
+----------------------------------------------------------------------
+LISTENS TO  The Play Again button (id "replay-btn").
+
+DOES    Starts a new game with the same players and length, using the
+        current questions.
+
+INPUT   A click event, which it ignores.
+
+CHANGE  Nothing needed.
+
+----------------------------------------------------------------------
+HANDLER: Main Menu button (click)
+----------------------------------------------------------------------
+LISTENS TO  The Main Menu button (id "menu-btn").
+
+DOES    Redraws the setup leaderboard, then shows the setup screen.
+
+INPUT   A click event, which it ignores.
+
+CHANGE  Have the leaderboard redraw itself whenever scores are saved.
+
+----------------------------------------------------------------------
+HANDLER: Clear leaderboard link (click)
+----------------------------------------------------------------------
+LISTENS TO  The "Clear leaderboard" link (id "clear-lb-btn").
+
+DOES    Asks for confirmation, then deletes the saved scores through
+        safeStorage and redraws the empty leaderboard.
+
+INPUT   A click event, which it ignores.
+
+CHANGE  Use a confirmation inside the page instead of confirm(), which
+        some in-app browsers block.
+
+----------------------------------------------------------------------
+HANDLER: Keyboard shortcuts (keydown on the whole page)
+----------------------------------------------------------------------
+LISTENS TO  Every key press on the page.
+
+DOES    While a question is waiting for an answer, A-D or 1-4 answers
+        it. (Enter for Next works because the Next button has focus.)
+
+INPUT   A keydown event. It reads event.key.
+
+CHANGE  - Ignore key presses with Ctrl, Alt or Cmd held, so browser
+          shortcuts like Ctrl+1 don't also answer.
+        - Show the shortcuts on screen.
+
+----------------------------------------------------------------------
+HANDLER: Returning to the tab (visibilitychange)
+----------------------------------------------------------------------
+LISTENS TO  The page becoming visible again after the player switched
+            tabs or apps.
+
+DOES    During a question, updates the timer straight away. Because
+        the timer uses the real clock, a question whose time ran out
+        while the tab was hidden is marked "Time's up" immediately.
+
+INPUT   A visibilitychange event, which it ignores; it checks
+        document.hidden.
+
+CHANGE  Nothing needed.
+
+----------------------------------------------------------------------
+HANDLER: Get new questions now button (click)
+----------------------------------------------------------------------
+LISTENS TO  The "Get new questions now" button (id
+            "refresh-questions-btn").
+
+DOES    Starts a forced refresh with refreshQuestions({ force: true }),
+        skipping the check for another tab's fresh questions. The
+        button is disabled while this tab is fetching.
+
+INPUT   A click event, which it ignores.
+
+CHANGE  Add a cool-down of a minute or so after each press.
+
+
+######################################################################
+SUMMARY
+######################################################################
+
+DONE: the six changes previously listed as "do first"
+  1. Safe storage everywhere (storage.js).
+  2. A timeout on every API request (fetchJsonWithTimeout).
+  3. A timer based on the real clock (timeRemaining, getTimeLeft).
+  4. Checking question counts before a game (buildQueue).
+  5. Keeping partial refresh results and coordinating between tabs
+     (refreshQuestions, withRefreshLock, handleStorageEvent).
+  6. Scoring separated from display (game-logic.js), with unit tests
+     in tests/.
+
+NEXT: changes I'd make now
+  1. Add a cool-down to "Get new questions now", so repeated presses
+     can't hit the API's rate limit.
+  2. Tell players when a game was shortened because there weren't
+     enough questions.
+  3. Ignore Ctrl, Alt and Cmd in the keyboard shortcuts.
+  4. Replace confirm() with a confirmation inside the page.
+  5. Keep a separate leaderboard for each game length.
+  6. Build the page with elements instead of HTML strings, and make $
+     report missing ids clearly.

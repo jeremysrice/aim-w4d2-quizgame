@@ -1,0 +1,8 @@
+{
+  "name": "quiz-clash",
+  "private": true,
+  "description": "Vanilla HTML/CSS/JS quiz game. No dependencies; package.json only defines the test command.",
+  "scripts": {
+    "test": "node --test"
+  }
+}

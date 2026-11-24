@@ -283,6 +283,24 @@ input[type="text"]:focus { outline: none; border-color: var(--accent); }
 .category + .question { margin-top: 0.3rem; }
 .question { font-size: clamp(1.15rem, 4.5vw, 1.5rem); margin: 1.25rem 0; line-height: 1.35; }
 
+/* ----- Notices (storage warnings, setup errors) ----- */
+.notice {
+  margin: 0.75rem 0;
+  padding: 0.6rem 0.8rem;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fcd34d;
+  font-size: 0.88rem;
+  text-align: center;
+}
+.notice.error {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.45);
+  color: #fca5a5;
+}
+.notice[hidden] { display: none; }
+
 /* ----- Question source status (setup screen) ----- */
 .question-source {
   margin-bottom: 1rem;

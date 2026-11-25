@@ -463,7 +463,7 @@ function renderQuestionStatus() {
   const wait = manualRefreshWaitMs(now);
   btn.disabled = s.loading || wait > 0;
   btn.textContent = wait > 0 && !s.loading
-    ? `↻ Get new questions again in ${Math.ceil(wait / 1000)}s`
+    ? `↻ New questions in ${Math.ceil(wait / 1000)}s`
     : "↻ Get new questions now";
   clearTimeout(cooldownTimer);
   if (wait > 0) cooldownTimer = setTimeout(renderQuestionStatus, Math.min(1000, wait));
